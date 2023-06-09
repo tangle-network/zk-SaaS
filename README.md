@@ -1,4 +1,4 @@
-# zkSaaS: Zero-Knowledge Software as a Service [ePrint:2023/](https://eprint.iacr.org/2023/)
+# zkSaaS: Zero-Knowledge SNARKs as a Service [ePrint:2023/](https://eprint.iacr.org/2023/)
 
 Rust implementation of the zkDilithium based anonymous credential scheme introduced in [ePrint:2023/](https://eprint.iacr.org/2023/)/
 
