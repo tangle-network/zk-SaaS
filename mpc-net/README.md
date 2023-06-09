@@ -1,0 +1,1 @@
+This crate was copied from https://github.com/alex-ozdemir/collaborative-zksnark
