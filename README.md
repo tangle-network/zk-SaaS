@@ -1,6 +1,6 @@
-# zkSaaS: Zero-Knowledge SNARKs as a Service [ePrint:2023/](https://eprint.iacr.org/2023/)
+# zkSaaS: Zero-Knowledge SNARKs as a Service [ePrint:2023/905](https://eprint.iacr.org/2023/905)
 
-Rust implementation of the zkSaaS protocol introduced in [ePrint:2023/](https://eprint.iacr.org/2023/)/
+Rust implementation of the zkSaaS protocol introduced in [ePrint:2023/905](https://eprint.iacr.org/2023/905)
 
 **WARNING:** This is an academic proof-of-concept prototype, and in particular has not received careful code review. This implementation is NOT ready for production use.
 
