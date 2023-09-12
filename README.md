@@ -1,4 +1,4 @@
-# zkSaaS: Zero-Knowledge SNARKs as a Service [ePrint:2023/905](https://eprint.iacr.org/2023/905)
+# zkSaaS 🖥️: Zero-Knowledge SNARKs as a Service [ePrint:2023/905](https://eprint.iacr.org/2023/905)
 
 Rust implementation of the zkSaaS protocol introduced in [ePrint:2023/905](https://eprint.iacr.org/2023/905)
 
