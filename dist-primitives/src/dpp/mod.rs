@@ -47,7 +47,10 @@ pub fn d_pp<F: FftField + PrimeField + Field>(
         // Unpack the secrets
         // (m/l)xn -> m
         // iterate over pxss_shares, unpack to get a vector and append all the vectors
-        let mut numden: Vec<F> = numden_shares.into_iter().flat_map(|x| pp.unpack2(x)).collect();
+        let mut numden: Vec<F> = numden_shares
+            .into_iter()
+            .flat_map(|x| pp.unpack2(x))
+            .collect();
 
         for i in 0..numden.len() / 2 {
             let den = numden[i + numden.len() / 2].inverse().unwrap();

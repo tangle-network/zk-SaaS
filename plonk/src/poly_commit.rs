@@ -21,9 +21,7 @@ impl<E: Pairing> PolyCk<E> {
         for power_of_tau in powers_of_tau.iter_mut().take(domain_size) {
             *power_of_tau = E::G1Affine::rand(rng);
         }
-        PolyCk::<E> {
-            powers_of_tau,
-        }
+        PolyCk::<E> { powers_of_tau }
     }
 
     /// Commits to a polynomial give the evals

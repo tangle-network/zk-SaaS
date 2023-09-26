@@ -160,10 +160,10 @@ impl Connections {
                         let stream = peer.stream.as_mut().unwrap();
                         stream.read_exact(&mut bytes_in[..]).unwrap();
                         stream.write_all(bytes_out).unwrap();
-                    },
+                    }
                     id if id == own_id => {
                         bytes_in.copy_from_slice(bytes_out);
-                    },
+                    }
                     _ => {
                         let stream = peer.stream.as_mut().unwrap();
                         stream.write_all(bytes_out).unwrap();

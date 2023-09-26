@@ -145,8 +145,10 @@ impl FieldChannel {
                     }
                     Err(e) => {
                         let kind = e.kind();
-                        if kind != std::io::ErrorKind::WouldBlock && kind != std::io::ErrorKind::Interrupted {
-                            return Err(e)
+                        if kind != std::io::ErrorKind::WouldBlock
+                            && kind != std::io::ErrorKind::Interrupted
+                        {
+                            return Err(e);
                         }
                     }
                 }
@@ -158,8 +160,10 @@ impl FieldChannel {
                     }
                     Err(e) => {
                         let kind = e.kind();
-                        if kind != std::io::ErrorKind::WouldBlock && kind != std::io::ErrorKind::Interrupted {
-                            return Err(e)
+                        if kind != std::io::ErrorKind::WouldBlock
+                            && kind != std::io::ErrorKind::Interrupted
+                        {
+                            return Err(e);
                         }
                     }
                 }

@@ -26,9 +26,7 @@ impl<E: Pairing> PackPolyCk<E> {
         for power_of_tau in powers_of_tau.iter_mut().take(domain_size / pp.l) {
             *power_of_tau = E::G1Affine::rand(rng);
         }
-        PackPolyCk::<E> {
-            powers_of_tau,
-        }
+        PackPolyCk::<E> { powers_of_tau }
     }
 
     /// Interactively commits to a polynomial give packed shares of the evals
