@@ -104,8 +104,8 @@ mod tests {
         <ark_bls12_377::Config as Bls12Config>::G1Config,
     > as Group>::ScalarField;
 
-    use crate::dmsm::dmsm::packexp_from_public;
-    use crate::dmsm::dmsm::unpackexp;
+    use crate::dmsm::packexp_from_public;
+    use crate::dmsm::unpackexp;
     use crate::utils::pack::transpose;
 
     const L: usize = 2;
@@ -121,7 +121,7 @@ mod tests {
         let secrets = secrets.to_vec();
 
         let shares = packexp_from_public(&secrets, &pp);
-        let result = unpackexp(&shares, false, &pp);
+        let result = unpackexp(shares, false, &pp);
 
         assert_eq!(secrets, result);
     }
@@ -165,7 +165,7 @@ mod tests {
             result[i] = G1P::msm(&temp_aff, &fshares[i]).unwrap();
         }
 
-        let result: G1P = unpackexp(&result, true, &pp).iter().sum();
+        let result: G1P = unpackexp(result, true, &pp).iter().sum();
         assert_eq!(expected, result);
     }
 }
