@@ -4,7 +4,7 @@ use ark_bls12_377::Fr;
 use ark_ff::{FftField, PrimeField};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_std::{end_timer, log2, start_timer};
-use dist_primitives::dfft::dfft::fft_in_place_rearrange;
+use dist_primitives::dfft::fft_in_place_rearrange;
 use secret_sharing::pss::PackedSharingParams;
 
 pub fn local_dfft_test<F: FftField + PrimeField>(

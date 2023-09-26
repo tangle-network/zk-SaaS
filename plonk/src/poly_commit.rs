@@ -18,17 +18,17 @@ impl<E: Pairing> PolyCk<E> {
     pub fn new<R: Rng>(domain_size: usize, rng: &mut R) -> Self {
         // using dummy to speedup testing
         let mut powers_of_tau: Vec<E::G1Affine> = vec![E::G1Affine::rand(rng); domain_size];
-        for i in 0..domain_size {
-            powers_of_tau[i] = E::G1Affine::rand(rng);
+        for power_of_tau in powers_of_tau.iter_mut().take(domain_size) {
+            *power_of_tau = E::G1Affine::rand(rng);
         }
         PolyCk::<E> {
-            powers_of_tau: powers_of_tau,
+            powers_of_tau,
         }
     }
 
     /// Commits to a polynomial give the evals
     #[allow(unused)]
-    pub fn commit(&self, pevals: &Vec<E::ScalarField>) {
+    pub fn commit(&self, pevals: &[E::ScalarField]) {
         let msm_time = start_timer!(|| "PolyCom MSM");
         let commitment = E::G1::msm(&self.powers_of_tau, pevals).unwrap();
         end_timer!(msm_time);
@@ -45,7 +45,7 @@ impl<E: Pairing> PolyCk<E> {
         debug_assert_eq!(pevals.len(), dom.size(), "pevals length is not equal to m");
         let open_timer = start_timer!(|| "PolyCom Open");
         // Interpolate pevals to get coeffs
-        let pcoeffs = dom.ifft(&pevals);
+        let pcoeffs = dom.ifft(pevals);
         let p = DensePolynomial::from_coefficients_vec(pcoeffs);
         let point_eval = p.evaluate(&point); // Evaluate pcoeffs at point
 

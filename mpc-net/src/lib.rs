@@ -4,25 +4,13 @@ pub mod two;
 pub use multi::MpcMultiNet;
 pub use two::MpcTwoNet;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Stats {
     pub bytes_sent: usize,
     pub bytes_recv: usize,
     pub broadcasts: usize,
     pub to_king: usize,
     pub from_king: usize,
-}
-
-impl std::default::Default for Stats {
-    fn default() -> Self {
-        Self {
-            bytes_sent: 0,
-            bytes_recv: 0,
-            broadcasts: 0,
-            to_king: 0,
-            from_king: 0,
-        }
-    }
 }
 
 pub trait MpcNet {

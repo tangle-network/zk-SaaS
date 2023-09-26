@@ -4,8 +4,8 @@ use ark_ff::{Field, UniformRand};
 use ark_poly::EvaluationDomain;
 use ark_std::{end_timer, start_timer, One, Zero};
 use dist_primitives::{
-    dfft::dfft::{d_fft, d_ifft},
-    dpp::dpp::d_pp,
+    dfft::{d_fft, d_ifft},
+    dpp::d_pp,
     utils::deg_red::deg_red,
 };
 use mpc_net::{MpcMultiNet as Net, MpcNet};
@@ -166,8 +166,8 @@ pub fn d_plonk_test<E: Pairing>(
     let mut tevals8 = vec![E::ScalarField::rand(rng); 8 * mbyl];
 
     let omega = pd.gates8.element(1);
-    let omegan = pd.gates8.element(1).pow(&([pd.n_gates as u64]));
-    let womegan = (pd.gates8.offset * pd.gates8.element(1)).pow(&([pd.n_gates as u64]));
+    let omegan = pd.gates8.element(1).pow([pd.n_gates as u64]);
+    let womegan = (pd.gates8.offset * pd.gates8.element(1)).pow([pd.n_gates as u64]);
 
     let mut omegai = E::ScalarField::one();
     let mut omegani = E::ScalarField::one();
@@ -212,7 +212,7 @@ pub fn d_plonk_test<E: Pairing>(
     let tcoeffs = d_ifft(tevals8, true, 1, false, &pd.gates8, pp);
     let mut tevals8 = d_fft(tcoeffs, false, 1, false, &pd.gates8, pp); //king actually needs to truncate
 
-    let toep_mat = E::ScalarField::from(123 as u32); // packed shares of toeplitz matrix drop from sky
+    let toep_mat = E::ScalarField::from(123_u32); // packed shares of toeplitz matrix drop from sky
     tevals8.iter_mut().for_each(|x| *x *= toep_mat);
 
     let tevals8 = deg_red(tevals8, pp);
@@ -260,8 +260,8 @@ pub fn d_plonk_test<E: Pairing>(
     let r_timer = start_timer!(|| "Compute r");
     let open_ab = open_a * open_b;
     let mut revals = vec![E::ScalarField::zero(); mbyl];
-    for i in 0..mbyl {
-        revals[i] = open_ab * pk.qm[i]
+    for (i, reval) in revals.iter_mut().enumerate().take(mbyl) {
+        *reval = open_ab * pk.qm[i]
             + open_a * pk.ql[i]
             + open_b * pk.qr[i]
             + open_c * pk.qo[i]

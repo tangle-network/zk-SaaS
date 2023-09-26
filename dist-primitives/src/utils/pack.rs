@@ -9,7 +9,7 @@ pub fn pack_vec<F: FftField>(secrets: &Vec<F>, pp: &PackedSharingParams<F>) -> V
     // pack shares
     let shares = secrets
         .chunks(pp.l)
-        .map(|x| pp.pack_from_public(&x.to_vec()))
+        .map(|x| pp.pack_from_public(x.to_vec()))
         .collect::<Vec<_>>();
 
     end_timer!(pack_shares_timer);

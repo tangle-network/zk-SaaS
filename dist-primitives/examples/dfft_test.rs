@@ -3,8 +3,8 @@ use ark_ff::{FftField, PrimeField};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_std::{end_timer, start_timer};
 use dist_primitives::{
-    channel::channel::MpcSerNet,
-    dfft::dfft::{d_fft, fft_in_place_rearrange},
+    channel::MpcSerNet,
+    dfft::{d_fft, fft_in_place_rearrange},
     utils::pack::transpose,
     Opt,
 };
@@ -51,7 +51,7 @@ pub fn d_fft_test<F: FftField + PrimeField>(
 
         let mut pevals: Vec<F> = peval_shares
             .into_iter()
-            .flat_map(|x| pp.unpack(&x))
+            .flat_map(|x| pp.unpack(x))
             .collect();
         pevals.reverse(); // todo: implement such that we avoid this reverse
 

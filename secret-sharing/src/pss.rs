@@ -49,46 +49,40 @@ impl<F: FftField> PackedSharingParams<F> {
 
     /// Packs secrets into shares
     #[allow(unused)]
-    pub fn pack_from_public(&self, secrets: &Vec<F>) -> Vec<F> {
-        let mut result = secrets.clone();
-        self.pack_from_public_in_place(&mut result);
-
-        result
+    pub fn pack_from_public(&self, mut secrets: Vec<F>) -> Vec<F> {
+        self.pack_from_public_in_place(&mut secrets);
+        secrets
     }
 
     /// Packs secrets into shares in place
     #[allow(unused)]
-    pub fn pack_from_public_in_place(&self, mut secrets: &mut Vec<F>) {
+    pub fn pack_from_public_in_place(&self, secrets: &mut Vec<F>) {
         // interpolating on secrets domain
-        self.secret.ifft_in_place(&mut secrets);
+        self.secret.ifft_in_place(secrets);
 
         // evaluate on share domain
-        self.share.fft_in_place(&mut secrets);
+        self.share.fft_in_place(secrets);
     }
 
     /// Unpacks shares of degree t+l into secrets
     #[allow(unused)]
-    pub fn unpack(&self, shares: &Vec<F>) -> Vec<F> {
-        let mut result = shares.clone();
-        self.unpack_in_place(&mut result);
-
-        result
+    pub fn unpack(&self, mut shares: Vec<F>) -> Vec<F> {
+        self.unpack_in_place(&mut shares);
+        shares
     }
 
     /// Unpacks shares of degree 2(t+l) into secrets
     #[allow(unused)]
-    pub fn unpack2(&self, shares: &Vec<F>) -> Vec<F> {
-        let mut result = shares.clone();
-        self.unpack2_in_place(&mut result);
-
-        result
+    pub fn unpack2(&self, mut shares: Vec<F>) -> Vec<F> {
+        self.unpack2_in_place(&mut shares);
+        shares
     }
 
     /// Unpacks shares of degree t+l into secrets in place
     #[allow(unused)]
-    pub fn unpack_in_place(&self, mut shares: &mut Vec<F>) {
+    pub fn unpack_in_place(&self, shares: &mut Vec<F>) {
         // interpolating on share domain
-        self.share.ifft_in_place(&mut shares);
+        self.share.ifft_in_place(shares);
 
         // assert that all but first t+l+1 elements are zero
         // #[cfg(debug_assertions)]
@@ -99,7 +93,7 @@ impl<F: FftField> PackedSharingParams<F> {
         // }
 
         // evaluate on secrets domain
-        self.secret.fft_in_place(&mut shares);
+        self.secret.fft_in_place(shares);
 
         // truncate to remove the randomness
         shares.truncate(self.l);
@@ -107,20 +101,20 @@ impl<F: FftField> PackedSharingParams<F> {
 
     /// Unpacks shares of degree 2(t+l) into secrets in place
     #[allow(unused)]
-    pub fn unpack2_in_place(&self, mut shares: &mut Vec<F>) {
+    pub fn unpack2_in_place(&self, shares: &mut Vec<F>) {
         // interpolating on share domain
-        self.share.ifft_in_place(&mut shares);
+        self.share.ifft_in_place(shares);
 
         // assert that all but first 2(t+l)+1 elements are zero
         #[cfg(debug_assertions)]
         {
-            for i in 2 * (self.l + self.t) + 1..shares.len() {
-                debug_assert!(shares[i].is_zero(), "Unpack2 failed");
+            for item in shares.iter().skip(2 * (self.l + self.t) + 1) {
+                debug_assert!(item.is_zero(), "Unpack2 failed");
             }
         }
 
         // evaluate on secrets domain
-        self.secret2.fft_in_place(&mut shares);
+        self.secret2.fft_in_place(shares);
 
         // drop alternate elements from shares array and only iterate till 2l as the rest of it is randomness
         *shares = shares[0..2 * self.l].iter().step_by(2).copied().collect();

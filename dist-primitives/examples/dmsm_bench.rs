@@ -2,7 +2,7 @@ use ark_bls12_377::Fr;
 use ark_ec::CurveGroup;
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_std::{end_timer, start_timer, UniformRand, Zero};
-use dist_primitives::{dmsm::dmsm::d_msm, Opt};
+use dist_primitives::{dmsm::d_msm, Opt};
 use mpc_net::{MpcMultiNet as Net, MpcNet};
 use secret_sharing::pss::PackedSharingParams;
 use structopt::StructOpt;

@@ -3,8 +3,8 @@ use ark_ff::UniformRand;
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{end_timer, start_timer};
-use dist_primitives::dfft::dfft::{d_fft, d_ifft};
-use dist_primitives::dmsm::dmsm::d_msm;
+use dist_primitives::dfft::{d_fft, d_ifft};
+use dist_primitives::dmsm::d_msm;
 use dist_primitives::utils::deg_red::deg_red;
 use rand::Rng;
 use secret_sharing::pss::PackedSharingParams;
@@ -23,11 +23,11 @@ impl<E: Pairing> PackPolyCk<E> {
     ) -> Self {
         // using dummy to speedup testing
         let mut powers_of_tau: Vec<E::G1Affine> = vec![E::G1Affine::rand(rng); domain_size / pp.l];
-        for i in 0..(domain_size / pp.l) {
-            powers_of_tau[i] = E::G1Affine::rand(rng);
+        for power_of_tau in powers_of_tau.iter_mut().take(domain_size / pp.l) {
+            *power_of_tau = E::G1Affine::rand(rng);
         }
         PackPolyCk::<E> {
-            powers_of_tau: powers_of_tau,
+            powers_of_tau,
         }
     }
 
@@ -60,7 +60,7 @@ impl<E: Pairing> PackPolyCk<E> {
         let pcoeff_share = d_ifft(peval_share.clone(), false, 1, false, dom, pp);
 
         // distributed poly evaluation
-        let powers_of_r_share = E::ScalarField::from(123 as u32); // packed shares of r drop from sky
+        let powers_of_r_share = E::ScalarField::from(123_u32); // packed shares of r drop from sky
         let point_eval_share = pcoeff_share
             .iter()
             .map(|&a| a * powers_of_r_share)
@@ -73,7 +73,7 @@ impl<E: Pairing> PackPolyCk<E> {
         // During iFFT king sends over the "truncated pcoeff_shares". Do FFT on this
 
         let ptrunc_evals = d_fft(pcoeff_share, false, 1, false, dom, pp);
-        let toep_mat_share = E::ScalarField::from(123 as u32); // packed shares of toeplitz matrix drop from sky
+        let toep_mat_share = E::ScalarField::from(123_u32); // packed shares of toeplitz matrix drop from sky
         let timer_div = start_timer!(|| "Division");
         let q_evals = ptrunc_evals
             .into_iter()

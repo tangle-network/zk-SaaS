@@ -53,7 +53,7 @@ impl Connections {
         for line in f.lines() {
             let line = line.unwrap();
             let trimmed = line.trim();
-            if trimmed.len() > 0 {
+            if !trimmed.is_empty() {
                 let addr: SocketAddr = trimmed
                     .parse()
                     .unwrap_or_else(|e| panic!("bad socket address: {}:\n{}", trimmed, e));
@@ -154,17 +154,23 @@ impl Connections {
             .enumerate()
             .map(|(id, peer)| {
                 let mut bytes_in = vec![0u8; m];
-                if id < own_id {
-                    let stream = peer.stream.as_mut().unwrap();
-                    stream.read_exact(&mut bytes_in[..]).unwrap();
-                    stream.write_all(bytes_out).unwrap();
-                } else if id == own_id {
-                    bytes_in.copy_from_slice(bytes_out);
-                } else {
-                    let stream = peer.stream.as_mut().unwrap();
-                    stream.write_all(bytes_out).unwrap();
-                    stream.read_exact(&mut bytes_in[..]).unwrap();
-                };
+
+                match id {
+                    id if id < own_id => {
+                        let stream = peer.stream.as_mut().unwrap();
+                        stream.read_exact(&mut bytes_in[..]).unwrap();
+                        stream.write_all(bytes_out).unwrap();
+                    },
+                    id if id == own_id => {
+                        bytes_in.copy_from_slice(bytes_out);
+                    },
+                    _ => {
+                        let stream = peer.stream.as_mut().unwrap();
+                        stream.write_all(bytes_out).unwrap();
+                        stream.read_exact(&mut bytes_in[..]).unwrap();
+                    }
+                }
+
                 bytes_in
             })
             .collect();
