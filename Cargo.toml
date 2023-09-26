@@ -4,5 +4,4 @@ members = [
   "dist-primitives",
   "mpc-net",
   "groth16",
-  "plonk"
 ]
