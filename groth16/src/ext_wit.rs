@@ -1,6 +1,6 @@
 use ark_ff::{FftField, PrimeField};
 use ark_std::{end_timer, start_timer};
-use dist_primitives::dfft::dfft::{d_fft, d_ifft};
+use dist_primitives::dfft::{d_fft, d_ifft};
 use rand::Rng;
 use secret_sharing::pss::PackedSharingParams;
 
@@ -56,9 +56,9 @@ pub fn d_ext_wit<F: FftField + PrimeField, R: Rng>(
     // Interpolate h and extract the first u_len coefficients from it as the higher coefficients will be zero
     ///////////IFFT
     // Starting with shares of evals
-    let sizeinv = F::one() / F::from(cd.constraint.size as u64);
-    for i in 0..h_eval.len() {
-        h_eval[i] *= sizeinv;
+    let sizeinv = F::one() / F::from(cd.constraint.size);
+    for i in &mut h_eval {
+        *i *= sizeinv;
     }
 
     // Parties apply FFT1 locally

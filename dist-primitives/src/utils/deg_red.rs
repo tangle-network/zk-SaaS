@@ -3,7 +3,7 @@ use ark_std::{end_timer, start_timer};
 use mpc_net::MpcMultiNet as Net;
 use secret_sharing::pss::PackedSharingParams;
 
-use crate::channel::channel::MpcSerNet;
+use crate::channel::MpcSerNet;
 
 use super::pack::transpose;
 
@@ -15,9 +15,9 @@ pub fn deg_red<F: FftField + PrimeField>(px: Vec<F>, pp: &PackedSharingParams<F>
     let king_answer: Option<Vec<Vec<F>>> = received_shares.map(|px_shares: Vec<Vec<F>>| {
         let repack_shares_timer = start_timer!(|| "Unpack Pack shares");
         let mut px_shares = transpose(px_shares);
-        for i in 0..px_shares.len() {
-            pp.unpack2_in_place(&mut px_shares[i]);
-            pp.pack_from_public_in_place(&mut px_shares[i]);
+        for px_share in &mut px_shares {
+            pp.unpack2_in_place(px_share);
+            pp.pack_from_public_in_place(px_share);
         }
         end_timer!(repack_shares_timer);
         transpose(px_shares)

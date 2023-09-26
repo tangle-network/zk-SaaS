@@ -2,8 +2,8 @@ use ark_bls12_377::Fr;
 use ark_ff::{FftField, PrimeField};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use dist_primitives::{
-    channel::channel::MpcSerNet,
-    dpp::dpp::d_pp,
+    channel::MpcSerNet,
+    dpp::d_pp,
     utils::pack::{pack_vec, transpose},
     Opt,
 };
@@ -37,7 +37,7 @@ pub fn d_pp_test<F: FftField + PrimeField>(
 
         let pp_px: Vec<F> = pp_px_shares
             .into_iter()
-            .flat_map(|x| pp.unpack(&x))
+            .flat_map(|x| pp.unpack(x))
             .collect();
 
         if Net::am_king() {

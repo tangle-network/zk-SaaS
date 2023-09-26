@@ -2,8 +2,8 @@ use ark_bls12_377::Fr;
 use ark_ec::CurveGroup;
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_std::{end_timer, start_timer, UniformRand};
-use dist_primitives::dmsm::dmsm::packexp_from_public;
-use dist_primitives::{dmsm::dmsm::d_msm, Opt};
+use dist_primitives::dmsm::packexp_from_public;
+use dist_primitives::{dmsm::d_msm, Opt};
 use mpc_net::{MpcMultiNet as Net, MpcNet};
 use secret_sharing::pss::PackedSharingParams;
 use structopt::StructOpt;
@@ -34,7 +34,7 @@ pub fn d_msm_test<G: CurveGroup>(
 
     let y_share: Vec<G::ScalarField> = y_pub
         .chunks(pp.l)
-        .map(|s| pp.pack_from_public(&s.to_vec())[Net::party_id()])
+        .map(|s| pp.pack_from_public(s.to_vec())[Net::party_id()])
         .collect();
 
     let x_pub_aff: Vec<G::Affine> = x_pub.iter().map(|s| s.clone().into()).collect();

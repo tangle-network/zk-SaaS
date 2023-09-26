@@ -150,8 +150,8 @@ pub fn localplonk<E: Pairing>(pd: &PlonkDomain<E::ScalarField>) {
     let mut tevals8 = vec![E::ScalarField::zero(); pd.gates8.size()];
 
     let omega = pd.gates8.element(1);
-    let omegan = pd.gates8.element(1).pow(&([pd.n_gates as u64]));
-    let womegan = (pd.gates8.offset * pd.gates8.element(1)).pow(&([pd.n_gates as u64]));
+    let omegan = pd.gates8.element(1).pow([pd.n_gates as u64]);
+    let womegan = (pd.gates8.offset * pd.gates8.element(1)).pow([pd.n_gates as u64]);
 
     let mut omegai = E::ScalarField::one();
     let mut omegani = E::ScalarField::one();
@@ -196,7 +196,7 @@ pub fn localplonk<E: Pairing>(pd: &PlonkDomain<E::ScalarField>) {
     let fft_timer = start_timer!(|| "FFT");
     let tcoeffs = pd.gates8.ifft(&tevals8);
     let mut tevals8 = pd.gates8.fft(&tcoeffs[0..7 * pd.n_gates]);
-    let toep_mat = E::ScalarField::from(123 as u32); // packed shares of toeplitz matrix drop from sky
+    let toep_mat = E::ScalarField::from(123_u32); // packed shares of toeplitz matrix drop from sky
     end_timer!(fft_timer);
 
     tevals8.iter_mut().for_each(|x| *x *= toep_mat);
@@ -235,8 +235,8 @@ pub fn localplonk<E: Pairing>(pd: &PlonkDomain<E::ScalarField>) {
     let open_ab = open_a * open_b;
     let mut revals = vec![E::ScalarField::zero(); pd.n_gates];
     let timer_r = start_timer!(|| "Compute r");
-    for i in 0..pd.n_gates {
-        revals[i] = open_ab * pk.qm[i]
+    for (i, reval) in revals.iter_mut().enumerate().take(pd.n_gates) {
+        *reval = open_ab * pk.qm[i]
             + open_a * pk.ql[i]
             + open_b * pk.qr[i]
             + open_c * pk.qo[i]
