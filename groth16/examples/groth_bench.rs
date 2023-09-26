@@ -2,7 +2,7 @@ use ark_ec::{bls12::Bls12, pairing::Pairing};
 use ark_ff::UniformRand;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{end_timer, start_timer};
-use dist_primitives::{dmsm::dmsm, Opt};
+use dist_primitives::{dmsm, Opt};
 use log::debug;
 use mpc_net::{MpcMultiNet as Net, MpcNet};
 use rand::Rng;
