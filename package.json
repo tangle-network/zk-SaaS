@@ -1,0 +1,15 @@
+{
+  "name": "zk-SaaS",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "https://github.com/webb-tools/zk-SaaS.git",
+  "author": "drew@webb.tools",
+  "license": "MIT",
+  "dependencies": {
+    "circomlib": "^2.0.5"
+  },
+  "scripts": {
+    "compile:circuit": "./scripts/compile_circuits.sh",
+    "setup:circuit": "./phase2_proving_key.sh"
+  }
+}

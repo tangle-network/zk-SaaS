@@ -1,3 +1,8 @@
 target/
 Cargo.lock
 .direnv
+
+*.sym
+node_modules
+powersOfTau*
+*.zkey

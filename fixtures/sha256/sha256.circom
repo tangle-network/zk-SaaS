@@ -1,6 +1,6 @@
 pragma circom 2.1.6;
 
-include "circomlib/sha256/sha256_2.circom";
+include "../../node_modules/circomlib/circuits/sha256/sha256_2.circom";
 
 template Hash(){
   signal input a;
