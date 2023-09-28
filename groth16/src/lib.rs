@@ -2,6 +2,8 @@ use ark_ff::FftField;
 use ark_poly::{domain::EvaluationDomain, Radix2EvaluationDomain};
 
 pub mod ext_wit;
+pub mod pre_processing;
+pub mod qap;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConstraintDomain<F>
