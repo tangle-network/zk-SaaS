@@ -25,9 +25,9 @@ struct PackProvingKeyShare<E: Pairing> {
 }
 
 impl<E: Pairing> PackProvingKeyShare<E> {
-    pub fn new<R: Rng>(
-        domain_size: usize,
+    pub fn rand<R: Rng>(
         rng: &mut R,
+        domain_size: usize,
         pp: &PackedSharingParams<E::ScalarField>,
     ) -> Self {
         let outer_time = start_timer!(|| "Dummy CRS packing");
@@ -112,7 +112,7 @@ fn dgroth<E: Pairing>(
     // Done
 
     let rng = &mut ark_std::test_rng();
-    let crs_share: PackProvingKeyShare<E> = PackProvingKeyShare::<E>::new(cd.m, rng, pp);
+    let crs_share: PackProvingKeyShare<E> = PackProvingKeyShare::<E>::rand(rng, cd.m, pp);
     let a_share: Vec<E::ScalarField> = vec![E::ScalarField::rand(rng); crs_share.s.len()];
 
     let h_share: Vec<E::ScalarField> = groth_ext_wit(rng, cd, pp);
