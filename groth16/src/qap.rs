@@ -92,7 +92,9 @@ pub fn qap<F: PrimeField, D: EvaluationDomain<F>>(
 mod tests {
     use super::*;
     use ark_bn254::{Bn254, Fr};
-    use ark_circom::{CircomBuilder, CircomConfig};
+    use ark_circom::{CircomBuilder, CircomConfig, CircomReduction};
+    use ark_crypto_primitives::snark::SNARK;
+    use ark_groth16::Groth16;
     use ark_poly::Radix2EvaluationDomain;
     use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem};
 
@@ -117,5 +119,24 @@ mod tests {
         let qap =
             qap::<Fr, Radix2EvaluationDomain<_>>(&matrices, &full_assignment);
         eprintln!("{:?}", qap);
+    }
+
+    #[test]
+    fn setup() {
+        let cfg = CircomConfig::<Bn254>::new(
+            "../fixtures/sha256/sha256.wasm",
+            "../fixtures/sha256/sha256.r1cs",
+        )
+        .unwrap();
+        let builder = CircomBuilder::new(cfg);
+        let circom = builder.setup();
+        let rng = &mut ark_std::rand::thread_rng();
+        let (pk, vk) =
+            Groth16::<Bn254, CircomReduction>::circuit_specific_setup(
+                circom, rng,
+            )
+            .unwrap();
+
+        // Do something with keys.
     }
 }
