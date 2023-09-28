@@ -14,9 +14,9 @@ fn groth_ext_wit<F: PrimeField, R: Rng>(
 ) -> Vec<F> {
     let mut p_eval: Vec<F> = vec![F::rand(rng); cd.m / pp.l];
     // Shares of P, Q, W drop from the sky
-    // P = a_i . u_i
-    // Q = a_i ⋅ v_i
-    // W = a_i ⋅ w_i
+    // P = Σ a_i . u_i
+    // Q = Σ a_i ⋅ v_i
+    // W = Σ a_i ⋅ w_i
 
     for i in 1..p_eval.len() {
         p_eval[i] = p_eval[i - 1].double();
