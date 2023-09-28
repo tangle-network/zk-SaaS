@@ -29,8 +29,8 @@ pub fn qap<F: PrimeField, D: EvaluationDomain<F>>(
     let num_inputs = matrices.num_instance_variables;
     let num_constraints = matrices.num_constraints;
 
-    let domain =
-        D::new(num_constraints + num_inputs).ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
+    let domain = D::new(num_constraints + num_inputs)
+        .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
     let domain_size = domain.size();
 
     let mut a = vec![zero; domain_size];
@@ -65,8 +65,8 @@ pub fn qap<F: PrimeField, D: EvaluationDomain<F>>(
 
     let root_of_unity = {
         let domain_size_double = 2 * domain_size;
-        let domain_double =
-            D::new(domain_size_double).ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
+        let domain_double = D::new(domain_size_double)
+            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
         domain_double.element(1)
     };
 
@@ -114,7 +114,8 @@ mod tests {
         assert!(cs.is_satisfied().unwrap());
         let matrices = cs.to_matrices().unwrap();
 
-        let qap = qap::<Fr, Radix2EvaluationDomain<_>>(&matrices, &full_assignment);
+        let qap =
+            qap::<Fr, Radix2EvaluationDomain<_>>(&matrices, &full_assignment);
         eprintln!("{:?}", qap);
     }
 }

@@ -11,7 +11,8 @@ use ark_std::{end_timer, start_timer};
 use super::{MpcNet, Stats};
 
 lazy_static! {
-    static ref CONNECTIONS: Mutex<Connections> = Mutex::new(Connections::default());
+    static ref CONNECTIONS: Mutex<Connections> =
+        Mutex::new(Connections::default());
 }
 
 /// Macro for locking the FieldChannel singleton in the current scope.
@@ -48,15 +49,16 @@ impl std::default::Default for Peer {
 impl Connections {
     /// Given a path and the `id` of oneself, initialize the structure
     fn init_from_path(&mut self, path: &str, id: usize) {
-        let f = BufReader::new(File::open(path).expect("host configuration path"));
+        let f =
+            BufReader::new(File::open(path).expect("host configuration path"));
         let mut peer_id = 0;
         for line in f.lines() {
             let line = line.unwrap();
             let trimmed = line.trim();
             if !trimmed.is_empty() {
-                let addr: SocketAddr = trimmed
-                    .parse()
-                    .unwrap_or_else(|e| panic!("bad socket address: {}:\n{}", trimmed, e));
+                let addr: SocketAddr = trimmed.parse().unwrap_or_else(|e| {
+                    panic!("bad socket address: {}:\n{}", trimmed, e)
+                });
                 let peer = Peer {
                     _id: peer_id,
                     addr,
@@ -86,7 +88,9 @@ impl Connections {
                                 std::io::ErrorKind::ConnectionRefused
                                 | std::io::ErrorKind::ConnectionReset => {
                                     ms_waited += 10;
-                                    std::thread::sleep(std::time::Duration::from_millis(10));
+                                    std::thread::sleep(
+                                        std::time::Duration::from_millis(10),
+                                    );
                                     if ms_waited % 3_000 == 0 {
                                         debug!("Still waiting");
                                     } else if ms_waited > 30_000 {
@@ -94,7 +98,10 @@ impl Connections {
                                     }
                                 }
                                 _ => {
-                                    panic!("Error during FieldChannel::new: {}", e);
+                                    panic!(
+                                        "Error during FieldChannel::new: {}",
+                                        e
+                                    );
                                 }
                             },
                         }
@@ -103,7 +110,8 @@ impl Connections {
                     self.peers[to_id].stream = Some(stream);
                 } else if self.id == to_id {
                     debug!("Awaiting {}", from_id);
-                    let listener = TcpListener::bind(self.peers[self.id].addr).unwrap();
+                    let listener =
+                        TcpListener::bind(self.peers[self.id].addr).unwrap();
                     let (stream, _addr) = listener.accept().unwrap();
                     stream.set_nodelay(true).unwrap();
                     self.peers[from_id].stream = Some(stream);

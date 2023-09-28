@@ -2,7 +2,10 @@ use ark_ff::FftField;
 use ark_std::{end_timer, start_timer};
 use secret_sharing::pss::PackedSharingParams;
 
-pub fn pack_vec<F: FftField>(secrets: &Vec<F>, pp: &PackedSharingParams<F>) -> Vec<Vec<F>> {
+pub fn pack_vec<F: FftField>(
+    secrets: &Vec<F>,
+    pp: &PackedSharingParams<F>,
+) -> Vec<Vec<F>> {
     debug_assert_eq!(secrets.len() % pp.l, 0, "Mismatch of size in pack_vec");
     let pack_shares_timer = start_timer!(|| "Packing shares");
 

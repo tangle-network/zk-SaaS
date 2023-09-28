@@ -15,7 +15,9 @@ type BlsFr = <Bls12<ark_bls12_377::Config> as Pairing>::ScalarField;
 
 use groth16::{ext_wit::groth_ext_wit, ConstraintDomain};
 
-#[derive(Clone, Debug, Default, PartialEq, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(
+    Clone, Debug, Default, PartialEq, CanonicalSerialize, CanonicalDeserialize,
+)]
 struct PackProvingKeyShare<E: Pairing> {
     pub s: Vec<E::G1Affine>,
     pub u: Vec<E::G1Affine>,
@@ -33,7 +35,8 @@ impl<E: Pairing> PackProvingKeyShare<E> {
         let outer_time = start_timer!(|| "Dummy CRS packing");
         let inner_time = start_timer!(|| "Packing S");
         // println!("a_query:{}", pk.a_query.len());
-        let mut s_shares: Vec<E::G1Affine> = vec![E::G1Affine::rand(rng); domain_size / pp.l];
+        let mut s_shares: Vec<E::G1Affine> =
+            vec![E::G1Affine::rand(rng); domain_size / pp.l];
         for i in 1..s_shares.len() {
             s_shares[i] = E::G1Affine::rand(rng);
         }
@@ -112,8 +115,10 @@ fn dgroth<E: Pairing>(
     // Done
 
     let rng = &mut ark_std::test_rng();
-    let crs_share: PackProvingKeyShare<E> = PackProvingKeyShare::<E>::rand(rng, cd.m, pp);
-    let a_share: Vec<E::ScalarField> = vec![E::ScalarField::rand(rng); crs_share.s.len()];
+    let crs_share: PackProvingKeyShare<E> =
+        PackProvingKeyShare::<E>::rand(rng, cd.m, pp);
+    let a_share: Vec<E::ScalarField> =
+        vec![E::ScalarField::rand(rng); crs_share.s.len()];
 
     let h_share: Vec<E::ScalarField> = groth_ext_wit(rng, cd, pp);
 

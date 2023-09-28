@@ -10,7 +10,8 @@ use ark_std::{end_timer, start_timer};
 use super::{MpcNet, Stats};
 
 lazy_static! {
-    pub static ref CH: Mutex<FieldChannel> = Mutex::new(FieldChannel::default());
+    pub static ref CH: Mutex<FieldChannel> =
+        Mutex::new(FieldChannel::default());
 }
 
 /// Macro for locking the FieldChannel singleton in the current scope.
@@ -44,15 +45,16 @@ impl std::default::Default for FieldChannel {
 
 impl FieldChannel {
     fn init_from_path(&mut self, path: &str, id: usize) {
-        let f = BufReader::new(File::open(path).expect("host configuration path"));
+        let f =
+            BufReader::new(File::open(path).expect("host configuration path"));
         let mut addrs = Vec::new();
         for line in f.lines() {
             let line = line.unwrap();
             let trimmed = line.trim();
             if !trimmed.is_empty() {
-                let addr: SocketAddr = trimmed
-                    .parse()
-                    .unwrap_or_else(|e| panic!("bad socket address: {}:\n{}", trimmed, e));
+                let addr: SocketAddr = trimmed.parse().unwrap_or_else(|e| {
+                    panic!("bad socket address: {}:\n{}", trimmed, e)
+                });
                 addrs.push(addr);
             }
         }
@@ -75,7 +77,9 @@ impl FieldChannel {
                     Err(e) => {
                         if e.kind() == std::io::ErrorKind::ConnectionRefused {
                             ms_waited += 100;
-                            std::thread::sleep(std::time::Duration::from_millis(100));
+                            std::thread::sleep(
+                                std::time::Duration::from_millis(100),
+                            );
                             if ms_waited % 3_000 == 0 {
                                 debug!("Still waiting");
                             } else if ms_waited > 30_000 {
@@ -129,7 +133,10 @@ impl FieldChannel {
     }
 
     #[inline]
-    pub fn exchange_bytes(&mut self, bytes_out: &[u8]) -> std::io::Result<Vec<u8>> {
+    pub fn exchange_bytes(
+        &mut self,
+        bytes_out: &[u8],
+    ) -> std::io::Result<Vec<u8>> {
         let timer = start_timer!(|| format!("Exchanging {}", bytes_out.len()));
         let s = self.stream();
         let n = bytes_out.len();
