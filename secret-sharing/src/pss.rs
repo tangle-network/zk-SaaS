@@ -2,21 +2,34 @@ use ark_poly::{domain::EvaluationDomain, Radix2EvaluationDomain};
 
 use ark_ff::FftField;
 
+/// Packed Secret Sharing Parameters
+///
+/// Configures the parameters for packed secret sharing. It assumes that the number of parties is `4l`,
+/// the corrupting threshold is `l-1`, and checks that the number of parties (n) equals to `2(t + l + 1)`.
+///
+/// ## Note
 /// Currently the packed secret sharing is deterministic, but it can easily be extended to add random values when packing
 #[derive(Debug, Clone, PartialEq)]
 pub struct PackedSharingParams<F>
 where
     F: FftField,
 {
-    pub t: usize,                           // Corruption threshold
-    pub l: usize,                           // Packing factor
-    pub n: usize,                           // Number of parties
-    pub share: Radix2EvaluationDomain<F>,   // Share domain
-    pub secret: Radix2EvaluationDomain<F>,  // Secrets domain
-    pub secret2: Radix2EvaluationDomain<F>, // Secrets2 domain
+    /// Corrupting threshold
+    pub t: usize,
+    /// Packing factor
+    pub l: usize,
+    /// Number of parties
+    pub n: usize,
+    /// Share domain
+    pub share: Radix2EvaluationDomain<F>,
+    /// Secrets domain
+    pub secret: Radix2EvaluationDomain<F>,
+    /// Secrets2 domain
+    pub secret2: Radix2EvaluationDomain<F>,
 }
 
 impl<F: FftField> PackedSharingParams<F> {
+    /// Creates a new instance of PackedSharingParams with the given packing factor
     #[allow(unused)]
     pub fn new(l: usize) -> Self {
         let n = l * 4;

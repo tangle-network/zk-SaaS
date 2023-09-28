@@ -14,6 +14,7 @@ use mpc_net::MpcMultiNet as Net;
 use secret_sharing::pss::PackedSharingParams;
 
 // Given pre-processed randomness [s], [s^-1]
+// Partial products of [num] and [den] are computed
 pub fn d_pp<F: FftField + PrimeField + Field>(
     num: Vec<F>,
     den: Vec<F>,
