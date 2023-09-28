@@ -18,7 +18,8 @@ pub fn d_msm_test<G: CurveGroup>(
 
     let rng = &mut ark_std::test_rng();
 
-    let mut y_share: Vec<G::ScalarField> = vec![G::ScalarField::zero(); dom.size()];
+    let mut y_share: Vec<G::ScalarField> =
+        vec![G::ScalarField::zero(); dom.size()];
     let mut x_share: Vec<G> = vec![G::zero(); dom.size()];
 
     for i in 0..dom.size() {
@@ -26,7 +27,8 @@ pub fn d_msm_test<G: CurveGroup>(
         x_share[i] = G::rand(rng);
     }
 
-    let x_share_aff: Vec<G::Affine> = x_share.iter().map(|s| s.clone().into()).collect();
+    let x_share_aff: Vec<G::Affine> =
+        x_share.iter().map(|s| s.clone().into()).collect();
 
     let dmsm = start_timer!(|| "Distributed msm");
     d_msm::<G>(&x_share_aff, &y_share, pp);

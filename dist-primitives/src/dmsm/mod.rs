@@ -80,10 +80,11 @@ pub fn d_msm<G: CurveGroup>(
     // Send to king who reduces and sends shamir shares (not packed).
     // Should be randomized. First convert to projective share.
 
-    let king_answer: Option<Vec<G>> = Net::send_to_king(&c_share).map(|shares: Vec<G>| {
-        let output: G = unpackexp(shares, true, pp).iter().sum();
-        vec![output; Net::n_parties()]
-    });
+    let king_answer: Option<Vec<G>> =
+        Net::send_to_king(&c_share).map(|shares: Vec<G>| {
+            let output: G = unpackexp(shares, true, pp).iter().sum();
+            vec![output; Net::n_parties()]
+        });
 
     Net::recv_from_king(king_answer)
 }
@@ -138,7 +139,8 @@ mod tests {
         let fsecrets = fsecrets.to_vec();
 
         ///////////////////////////////////////
-        let gsecrets_aff: Vec<G1Affine> = gsecrets.iter().map(|s| s.clone().into()).collect();
+        let gsecrets_aff: Vec<G1Affine> =
+            gsecrets.iter().map(|s| s.clone().into()).collect();
         let expected = G1P::msm(&gsecrets_aff, &fsecrets).unwrap();
         ///////////////////////////////////////
         let gshares: Vec<Vec<G1P>> = gsecrets

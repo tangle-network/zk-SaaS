@@ -37,12 +37,15 @@ pub fn d_msm_test<G: CurveGroup>(
         .map(|s| pp.pack_from_public(s.to_vec())[Net::party_id()])
         .collect();
 
-    let x_pub_aff: Vec<G::Affine> = x_pub.iter().map(|s| s.clone().into()).collect();
-    let x_share_aff: Vec<G::Affine> = x_share.iter().map(|s| s.clone().into()).collect();
+    let x_pub_aff: Vec<G::Affine> =
+        x_pub.iter().map(|s| s.clone().into()).collect();
+    let x_share_aff: Vec<G::Affine> =
+        x_share.iter().map(|s| s.clone().into()).collect();
 
     // Will be comparing against this in the end
     let nmsm = start_timer!(|| "Ark msm");
-    let should_be_output = G::msm(&x_pub_aff.as_slice(), &y_pub.as_slice()).unwrap();
+    let should_be_output =
+        G::msm(&x_pub_aff.as_slice(), &y_pub.as_slice()).unwrap();
     end_timer!(nmsm);
 
     let dmsm = start_timer!(|| "Distributed msm");
