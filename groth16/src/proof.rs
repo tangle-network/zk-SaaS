@@ -3,7 +3,10 @@ use ark_ec::pairing::Pairing;
 use ark_ff::{FftField, PrimeField};
 use ark_groth16::Proof;
 
-fn calculate_A<F: FftField + PrimeField + Into<u64>, E: Pairing<G1Affine = F>>(
+fn calculate_A<
+    F: FftField + PrimeField + Into<u64>,
+    E: Pairing<G1Affine = F>,
+>(
     L: F,
     N: F,
     r: F,
@@ -157,7 +160,13 @@ fn calculate_groth16_proof<
     let a_proof = calculate_A::<F, E>(L, N, r, S, a.clone());
     let b_proof = calculate_B::<F, E>(Z, K, s, V.clone(), a.clone());
 
-    let h_of_x_values = calculate_h_of_x(a.clone(), U.clone(), V, W.clone(), t_of_x_secret_shares);
+    let h_of_x_values = calculate_h_of_x(
+        a.clone(),
+        U.clone(),
+        V,
+        W.clone(),
+        t_of_x_secret_shares,
+    );
 
     let c_proof = calculate_C::<F, E>(W, a, U, h, A, s, M, r, h_of_x_values);
 
