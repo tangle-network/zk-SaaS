@@ -3,6 +3,8 @@ use ark_ff::{FftField, PrimeField};
 use dist_primitives::dmsm;
 use secret_sharing::pss::PackedSharingParams;
 
+use crate::proving_key::PackedProvingKeyShare;
+
 #[allow(non_snake_case)]
 fn compute_A<F: FftField + PrimeField + Into<u64>, E: Pairing<G1Affine = F>>(
     L: F,
@@ -17,11 +19,10 @@ fn compute_A<F: FftField + PrimeField + Into<u64>, E: Pairing<G1Affine = F>>(
     let lhs = L * N.pow(&[r.into()]);
 
     // Start out by calculating the product of S_i^a_i
-    dmsm::d_msm(&crs_share.s, &a_share, pp);
-    // let mut prod = F::one();
-    // for i in 0..S.len() {
-    //     prod *= S[i].pow(&[a[i].into()]);
-    // }
+    let mut prod = F::one();
+    for i in 0..S.len() {
+        prod *= S[i].pow(&[a[i].into()]);
+    }
 
     // Finally, multiply lhs by prod to find A
     lhs * prod

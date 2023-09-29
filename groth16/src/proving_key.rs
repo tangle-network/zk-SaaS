@@ -1,6 +1,7 @@
-use ark_ec::{pairing::Pairing, AffineRepr};
+use ark_ec::{pairing::Pairing, short_weierstrass::Affine, AffineRepr, Group};
 use ark_ff::{FftField, PrimeField};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use dist_primitives::dmsm::packexp_from_public;
 use secret_sharing::pss::PackedSharingParams;
 
 use ark_ff::UniformRand;
@@ -10,7 +11,7 @@ use rand::Rng;
 #[derive(
     Clone, Debug, Default, PartialEq, CanonicalSerialize, CanonicalDeserialize,
 )]
-pub struct PackProvingKeyShare<E: Pairing> {
+pub struct PackedProvingKeyShare<E: Pairing> {
     pub s: Vec<E::G1Affine>,
     pub u: Vec<E::G1Affine>,
     pub v: Vec<E::G2Affine>,
@@ -18,33 +19,31 @@ pub struct PackProvingKeyShare<E: Pairing> {
     pub h: Vec<E::G1Affine>,
 }
 
-impl<E: Pairing> PackProvingKeyShare<E>
+impl<E: Pairing> PackedProvingKeyShare<E>
 where
-    E::ScalarField: FftField + PrimeField,
+    E::ScalarField: FftField,
+    <<E as Pairing>::G1Affine as AffineRepr>::ScalarField: FftField,
+    E::BaseField: PrimeField,
+    <E as Pairing>::G1Affine: Group,
 {
     pub fn pack_from_arkworks_proving_key(
         pk: &ark_groth16::ProvingKey<E>,
         n_parties: usize,
-        pp: PackedSharingParams<E::ScalarField>,
+        pp_g1: PackedSharingParams<<E::G1Affine as AffineRepr>::ScalarField>,
+        pp_g2: PackedSharingParams<<E::G2Affine as AffineRepr>::ScalarField>,
     ) -> Vec<Self> {
         let mut packed_proving_key_shares = Vec::new();
-        let pp = PackedSharingParams::<E::ScalarField>::new(n_parties);
 
-        let pre_packed_s = pk.a_query
-            .iter()
-            .map(|p: &E::G1Affine| p
-                .xy()
-                .map(|p| [*p.0, *p.1])
-                .unwrap()
-            )
-            .flatten()
-            .collect::<Vec<<<E as Pairing>::G1Affine as AffineRepr>::BaseField>>();
+        let pre_packed_s = pk.a_query;
         let pre_packed_u = pk.h_query;
         let pre_packed_w = pk.l_query;
         let pre_packed_h = pk.b_g1_query;
         let pre_packed_v = pk.b_g2_query;
 
-        // let packed_s = pre_packed_s.chunks(pp.l).map(|chunk| pp.pack_from_public(chunk.to_vec())).collect::<Vec<_>>();
+        let packed_s = pre_packed_s
+            .chunks(pp_g1.l)
+            .map(|chunk| packexp_from_public(&chunk.to_vec(), &pp_g1))
+            .collect::<Vec<_>>();
         // let packed_u = pre_packed_u.chunks(pp.l).map(|chunk| pp.pack_from_public(chunk.to_vec())).collect::<Vec<_>>();
         // let packed_w = pre_packed_w.chunks(pp.l).map(|chunk| pp.pack_from_public(chunk.to_vec())).collect::<Vec<_>>();
         // let packed_h = pre_packed_h.chunks(pp.l).map(|chunk| pp.pack_from_public(chunk.to_vec())).collect::<Vec<_>>();
@@ -57,7 +56,7 @@ where
             let mut w_shares = Vec::new();
             let mut h_shares = Vec::new();
 
-            packed_proving_key_shares.push(PackProvingKeyShare::<E> {
+            packed_proving_key_shares.push(PackedProvingKeyShare::<E> {
                 s: s_shares,
                 u: u_shares,
                 v: v_shares,
@@ -116,7 +115,7 @@ where
         end_timer!(inner_time);
         end_timer!(outer_time);
 
-        PackProvingKeyShare::<E> {
+        PackedProvingKeyShare::<E> {
             s: s_shares,
             u: u_shares,
             v: v_shares,
