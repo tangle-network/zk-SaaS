@@ -27,12 +27,20 @@ where
     <E as Pairing>::G1Affine: Group,
     <E as Pairing>::G2Affine: Group,
 {
+    /// Given a proving key, pack it into a vector of ProvingKeyShares.
+    /// Each party will hold one share per PSS chunk.
     pub fn pack_from_arkworks_proving_key(
         pk: &ark_groth16::ProvingKey<E>,
         n_parties: usize,
-        pp_g1: PackedSharingParams<<<E as Pairing>::G1Affine as Group>::ScalarField>,
-        pp_g2: PackedSharingParams<<<E as Pairing>::G2Affine as Group>::ScalarField>,
+        pp_g1: PackedSharingParams<
+            <<E as Pairing>::G1Affine as Group>::ScalarField,
+        >,
+        pp_g2: PackedSharingParams<
+            <<E as Pairing>::G2Affine as Group>::ScalarField,
+        >,
     ) -> Vec<Self> {
+        assert!(pp_g1.l == pp_g2.l);
+
         let mut packed_proving_key_shares = Vec::new();
 
         let pre_packed_s = pk.a_query.clone();
@@ -45,10 +53,22 @@ where
             .chunks(pp_g1.l)
             .map(|chunk| packexp_from_public(&chunk.to_vec(), &pp_g1))
             .collect::<Vec<_>>();
-        // let packed_u = pre_packed_u.chunks(pp.l).map(|chunk| pp.pack_from_public(chunk.to_vec())).collect::<Vec<_>>();
-        // let packed_w = pre_packed_w.chunks(pp.l).map(|chunk| pp.pack_from_public(chunk.to_vec())).collect::<Vec<_>>();
-        // let packed_h = pre_packed_h.chunks(pp.l).map(|chunk| pp.pack_from_public(chunk.to_vec())).collect::<Vec<_>>();
-        // let packed_v = pre_packed_v.chunks(pp.l).map(|chunk| pp.pack_from_public(chunk.to_vec())).collect::<Vec<_>>();
+        let packed_u = pre_packed_u
+            .chunks(pp_g1.l)
+            .map(|chunk| packexp_from_public(&chunk.to_vec(), &pp_g1))
+            .collect::<Vec<_>>();
+        let packed_w = pre_packed_w
+            .chunks(pp_g1.l)
+            .map(|chunk| packexp_from_public(&chunk.to_vec(), &pp_g1))
+            .collect::<Vec<_>>();
+        let packed_h = pre_packed_h
+            .chunks(pp_g1.l)
+            .map(|chunk| packexp_from_public(&chunk.to_vec(), &pp_g1))
+            .collect::<Vec<_>>();
+        let packed_v = pre_packed_v
+            .chunks(pp_g2.l)
+            .map(|chunk| packexp_from_public(&chunk.to_vec(), &pp_g2))
+            .collect::<Vec<_>>();
 
         for i in 0..n_parties {
             let mut s_shares = Vec::new();
@@ -56,6 +76,14 @@ where
             let mut v_shares = Vec::new();
             let mut w_shares = Vec::new();
             let mut h_shares = Vec::new();
+
+            for j in 0..packed_s.len() {
+                s_shares.push(packed_s[j][i].clone());
+                u_shares.push(packed_u[j][i].clone());
+                v_shares.push(packed_v[j][i].clone());
+                w_shares.push(packed_w[j][i].clone());
+                h_shares.push(packed_h[j][i].clone());
+            }
 
             packed_proving_key_shares.push(PackedProvingKeyShare::<E> {
                 s: s_shares,
