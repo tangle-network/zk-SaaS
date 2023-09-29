@@ -23,7 +23,10 @@ fn calculate_A<F: FftField + PrimeField + Into<u64>, E: Pairing<G1Affine = F>>(
     lhs * prod
 }
 
-fn calculate_B<F: FftField + PrimeField + Into<u64>, E: Pairing<G2Affine = F>>(
+fn calculate_B<
+    F: FftField + PrimeField + Into<u64>,
+    E: Pairing<G2Affine = F>,
+>(
     Z: F,
     K: F,
     s: F,
@@ -80,7 +83,10 @@ fn calculate_h_of_x<F: FftField + PrimeField>(
     h_x
 }
 
-fn calculate_C<F: FftField + PrimeField + Into<u64>, E: Pairing<G1Affine = F>>(
+fn calculate_C<
+    F: FftField + PrimeField + Into<u64>,
+    E: Pairing<G1Affine = F>,
+>(
     W: Vec<F>,
     a: Vec<F>,
     U: Vec<F>,
