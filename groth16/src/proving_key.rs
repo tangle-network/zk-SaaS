@@ -1,12 +1,16 @@
-use ark_ec::{pairing::Pairing, short_weierstrass::Affine, AffineRepr, Group};
+use ark_ec::{pairing::Pairing, AffineRepr};
 use ark_ff::{FftField, PrimeField};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use ark_std::{cfg_chunks, cfg_into_iter};
 use dist_primitives::dmsm::packexp_from_public;
 use secret_sharing::pss::PackedSharingParams;
 
 use ark_ff::UniformRand;
 use ark_std::{end_timer, start_timer};
 use rand::Rng;
+
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 #[derive(
     Clone, Debug, Default, PartialEq, CanonicalSerialize, CanonicalDeserialize,
@@ -24,8 +28,6 @@ where
     E::ScalarField: FftField,
     <<E as Pairing>::G1Affine as AffineRepr>::ScalarField: FftField,
     E::BaseField: PrimeField,
-    <E as Pairing>::G1Affine: Group,
-    <E as Pairing>::G2Affine: Group,
 {
     /// Given a proving key, pack it into a vector of ProvingKeyShares.
     /// Each party will hold one share per PSS chunk.
@@ -33,56 +35,61 @@ where
         pk: &ark_groth16::ProvingKey<E>,
         n_parties: usize,
         pp_g1: PackedSharingParams<
-            <<E as Pairing>::G1Affine as Group>::ScalarField,
+            <<E as Pairing>::G1Affine as AffineRepr>::ScalarField,
         >,
         pp_g2: PackedSharingParams<
-            <<E as Pairing>::G2Affine as Group>::ScalarField,
+            <<E as Pairing>::G2Affine as AffineRepr>::ScalarField,
         >,
     ) -> Vec<Self> {
         assert!(pp_g1.l == pp_g2.l);
 
-        let mut packed_proving_key_shares = Vec::new();
+        let mut packed_proving_key_shares = Vec::with_capacity(n_parties);
 
-        let pre_packed_s = pk.a_query.clone();
-        let pre_packed_u = pk.h_query.clone();
-        let pre_packed_w = pk.l_query.clone();
-        let pre_packed_h = pk.b_g1_query.clone();
-        let pre_packed_v = pk.b_g2_query.clone();
+        let pre_packed_s = cfg_into_iter!(pk.a_query.clone())
+            .map(Into::into)
+            .collect::<Vec<_>>();
+        let pre_packed_u = cfg_into_iter!(pk.h_query.clone())
+            .map(Into::into)
+            .collect::<Vec<_>>();
+        let pre_packed_w = cfg_into_iter!(pk.l_query.clone())
+            .map(Into::into)
+            .collect::<Vec<_>>();
+        let pre_packed_h = cfg_into_iter!(pk.b_g1_query.clone())
+            .map(Into::into)
+            .collect::<Vec<_>>();
+        let pre_packed_v = cfg_into_iter!(pk.b_g2_query.clone())
+            .map(Into::into)
+            .collect::<Vec<_>>();
 
-        let packed_s = pre_packed_s
-            .chunks(pp_g1.l)
-            .map(|chunk| packexp_from_public(&chunk.to_vec(), &pp_g1))
+        let packed_s = cfg_chunks!(pre_packed_s, pp_g1.l)
+            .map(|chunk| packexp_from_public::<E::G1>(&chunk.to_vec(), &pp_g1))
             .collect::<Vec<_>>();
-        let packed_u = pre_packed_u
-            .chunks(pp_g1.l)
-            .map(|chunk| packexp_from_public(&chunk.to_vec(), &pp_g1))
+        let packed_u = cfg_chunks!(pre_packed_u, pp_g1.l)
+            .map(|chunk| packexp_from_public::<E::G1>(&chunk.to_vec(), &pp_g1))
             .collect::<Vec<_>>();
-        let packed_w = pre_packed_w
-            .chunks(pp_g1.l)
-            .map(|chunk| packexp_from_public(&chunk.to_vec(), &pp_g1))
+        let packed_w = cfg_chunks!(pre_packed_w, pp_g1.l)
+            .map(|chunk| packexp_from_public::<E::G1>(&chunk.to_vec(), &pp_g1))
             .collect::<Vec<_>>();
-        let packed_h = pre_packed_h
-            .chunks(pp_g1.l)
-            .map(|chunk| packexp_from_public(&chunk.to_vec(), &pp_g1))
+        let packed_h = cfg_chunks!(pre_packed_h, pp_g1.l)
+            .map(|chunk| packexp_from_public::<E::G1>(&chunk.to_vec(), &pp_g1))
             .collect::<Vec<_>>();
-        let packed_v = pre_packed_v
-            .chunks(pp_g2.l)
-            .map(|chunk| packexp_from_public(&chunk.to_vec(), &pp_g2))
+        let packed_v = cfg_chunks!(pre_packed_v, pp_g2.l)
+            .map(|chunk| packexp_from_public::<E::G2>(&chunk.to_vec(), &pp_g2))
             .collect::<Vec<_>>();
 
         for i in 0..n_parties {
-            let mut s_shares = Vec::new();
-            let mut u_shares = Vec::new();
-            let mut v_shares = Vec::new();
-            let mut w_shares = Vec::new();
-            let mut h_shares = Vec::new();
+            let mut s_shares = Vec::with_capacity(packed_s.len());
+            let mut u_shares = Vec::with_capacity(packed_u.len());
+            let mut v_shares = Vec::with_capacity(packed_v.len());
+            let mut w_shares = Vec::with_capacity(packed_w.len());
+            let mut h_shares = Vec::with_capacity(packed_h.len());
 
             for j in 0..packed_s.len() {
-                s_shares.push(packed_s[j][i].clone());
-                u_shares.push(packed_u[j][i].clone());
-                v_shares.push(packed_v[j][i].clone());
-                w_shares.push(packed_w[j][i].clone());
-                h_shares.push(packed_h[j][i].clone());
+                s_shares.push(packed_s[j][i].into());
+                u_shares.push(packed_u[j][i].into());
+                v_shares.push(packed_v[j][i].into());
+                w_shares.push(packed_w[j][i].into());
+                h_shares.push(packed_h[j][i].into());
             }
 
             packed_proving_key_shares.push(PackedProvingKeyShare::<E> {
@@ -151,5 +158,42 @@ where
             w: w_shares,
             h: h_shares,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use ark_bn254::Bn254;
+    use ark_circom::{CircomBuilder, CircomConfig, CircomReduction};
+    use ark_crypto_primitives::snark::SNARK;
+    use ark_groth16::Groth16;
+
+    #[test]
+    #[ignore = "takes a lot of time to run"]
+    fn packed_pk_from_arkworks_pk() {
+        let cfg = CircomConfig::<Bn254>::new(
+            "../fixtures/sha256/sha256_js/sha256.wasm",
+            "../fixtures/sha256/sha256.r1cs",
+        )
+        .unwrap();
+        let builder = CircomBuilder::new(cfg);
+        let circom = builder.setup();
+        let rng = &mut ark_std::rand::thread_rng();
+        let (pk, _vk) =
+            Groth16::<Bn254, CircomReduction>::circuit_specific_setup(
+                circom, rng,
+            )
+            .unwrap();
+        let pp_g1 = PackedSharingParams::new(4);
+        let pp_g2 = PackedSharingParams::new(4);
+        let n = 8;
+        let shares =
+            PackedProvingKeyShare::<Bn254>::pack_from_arkworks_proving_key(
+                &pk, n, pp_g1, pp_g2,
+            );
+        eprintln!("shares: {:?}", shares);
+        // Do something with the shares
     }
 }

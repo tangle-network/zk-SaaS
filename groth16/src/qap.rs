@@ -4,6 +4,9 @@ use ark_poly::EvaluationDomain;
 use ark_relations::r1cs::{ConstraintMatrices, SynthesisError};
 use ark_std::{cfg_iter, cfg_iter_mut, vec};
 
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+
 /// A Quadratic Arithmetic Program (QAP) that holds
 /// witness reductions from R1CS.
 #[derive(Debug, Clone)]
@@ -131,7 +134,7 @@ mod tests {
         let builder = CircomBuilder::new(cfg);
         let circom = builder.setup();
         let rng = &mut ark_std::rand::thread_rng();
-        let (pk, vk) =
+        let (_pk, _vk) =
             Groth16::<Bn254, CircomReduction>::circuit_specific_setup(
                 circom, rng,
             )
