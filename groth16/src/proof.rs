@@ -3,12 +3,12 @@ use ark_ec::pairing::Pairing;
 use ark_ff::{FftField, PrimeField};
 use ark_groth16::Proof;
 
-fn calculate_A<F: FftField + PrimeField + Into<u64>, E: Pairing<G1Affine=F>>(
+fn calculate_A<F: FftField + PrimeField + Into<u64>, E: Pairing<G1Affine = F>>(
     L: F,
     N: F,
     r: F,
     S: Vec<F>,
-    a: Vec<F>
+    a: Vec<F>,
 ) -> E::G1Affine {
     // Start out by calculating the product of S_i^a_i
     let mut prod = F::one();
@@ -23,12 +23,12 @@ fn calculate_A<F: FftField + PrimeField + Into<u64>, E: Pairing<G1Affine=F>>(
     lhs * prod
 }
 
-fn calculate_B<F: FftField + PrimeField + Into<u64>, E: Pairing<G2Affine=F>>(
+fn calculate_B<F: FftField + PrimeField + Into<u64>, E: Pairing<G2Affine = F>>(
     Z: F,
     K: F,
     s: F,
     V: Vec<F>,
-    a: Vec<F>
+    a: Vec<F>,
 ) -> E::G2Affine {
     // Start out by calculating the product of V_i^a_i
     let mut prod = F::one();
@@ -48,7 +48,7 @@ fn calculate_h_of_x<F: FftField + PrimeField>(
     u_x: Vec<F>,
     v_x: Vec<F>,
     w_x: Vec<F>,
-    t_of_x_secret_shares: Vec<F>
+    t_of_x_secret_shares: Vec<F>,
 ) -> Vec<F> {
     // Calculate the sum of a*u_x
     let mut sum_u = F::zero();
@@ -80,7 +80,7 @@ fn calculate_h_of_x<F: FftField + PrimeField>(
     h_x
 }
 
-fn calculate_C<F: FftField + PrimeField + Into<u64>, E: Pairing<G1Affine=F>>(
+fn calculate_C<F: FftField + PrimeField + Into<u64>, E: Pairing<G1Affine = F>>(
     W: Vec<F>,
     a: Vec<F>,
     U: Vec<F>,
@@ -128,7 +128,10 @@ fn calculate_C<F: FftField + PrimeField + Into<u64>, E: Pairing<G1Affine=F>>(
     Mr * As * lhs_prod3r
 }
 
-fn calculate_groth16_proof<F: FftField + PrimeField + Into<u64>, E: Pairing<G1Affine=F, G2Affine=F>>(
+fn calculate_groth16_proof<
+    F: FftField + PrimeField + Into<u64>,
+    E: Pairing<G1Affine = F, G2Affine = F>,
+>(
     L: F,
     N: F,
     r: F,
@@ -143,46 +146,18 @@ fn calculate_groth16_proof<F: FftField + PrimeField + Into<u64>, E: Pairing<G1Af
     h: Vec<F>,
     A: F,
     M: F,
-    t_of_x_secret_shares: Vec<F>
+    t_of_x_secret_shares: Vec<F>,
 ) -> Proof<E> {
-    let a_proof = calculate_A::<F, E>(
-        L,
-        N,
-        r,
-        S,
-        a.clone()
-    );
-    let b_proof = calculate_B::<F, E>(
-        Z,
-        K,
-        s,
-        V.clone(),
-        a.clone()
-    );
+    let a_proof = calculate_A::<F, E>(L, N, r, S, a.clone());
+    let b_proof = calculate_B::<F, E>(Z, K, s, V.clone(), a.clone());
 
-    let h_of_x_values = calculate_h_of_x(
-        a.clone(),
-        U.clone(),
-        V,
-        W.clone(),
-        t_of_x_secret_shares
-    );
+    let h_of_x_values = calculate_h_of_x(a.clone(), U.clone(), V, W.clone(), t_of_x_secret_shares);
 
-    let c_proof = calculate_C::<F, E>(
-        W,
-        a,
-        U,
-        h,
-        A,
-        s,
-        M,
-        r,
-        h_of_x_values
-    );
+    let c_proof = calculate_C::<F, E>(W, a, U, h, A, s, M, r, h_of_x_values);
 
     Proof::<E> {
         a: a_proof,
         b: b_proof,
-        c: c_proof
+        c: c_proof,
     }
 }
