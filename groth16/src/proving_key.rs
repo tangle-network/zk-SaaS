@@ -25,20 +25,21 @@ where
     <<E as Pairing>::G1Affine as AffineRepr>::ScalarField: FftField,
     E::BaseField: PrimeField,
     <E as Pairing>::G1Affine: Group,
+    <E as Pairing>::G2Affine: Group,
 {
     pub fn pack_from_arkworks_proving_key(
         pk: &ark_groth16::ProvingKey<E>,
         n_parties: usize,
-        pp_g1: PackedSharingParams<<E::G1Affine as AffineRepr>::ScalarField>,
-        pp_g2: PackedSharingParams<<E::G2Affine as AffineRepr>::ScalarField>,
+        pp_g1: PackedSharingParams<<<E as Pairing>::G1Affine as Group>::ScalarField>,
+        pp_g2: PackedSharingParams<<<E as Pairing>::G2Affine as Group>::ScalarField>,
     ) -> Vec<Self> {
         let mut packed_proving_key_shares = Vec::new();
 
-        let pre_packed_s = pk.a_query;
-        let pre_packed_u = pk.h_query;
-        let pre_packed_w = pk.l_query;
-        let pre_packed_h = pk.b_g1_query;
-        let pre_packed_v = pk.b_g2_query;
+        let pre_packed_s = pk.a_query.clone();
+        let pre_packed_u = pk.h_query.clone();
+        let pre_packed_w = pk.l_query.clone();
+        let pre_packed_h = pk.b_g1_query.clone();
+        let pre_packed_v = pk.b_g2_query.clone();
 
         let packed_s = pre_packed_s
             .chunks(pp_g1.l)
