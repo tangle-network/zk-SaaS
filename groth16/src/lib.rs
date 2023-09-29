@@ -4,6 +4,7 @@ use ark_poly::{domain::EvaluationDomain, Radix2EvaluationDomain};
 pub mod ext_wit;
 pub mod pre_processing;
 pub mod qap;
+pub mod proof;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConstraintDomain<F>
