@@ -13,77 +13,9 @@ use ark_bls12_377;
 type BlsE = Bls12<ark_bls12_377::Config>;
 type BlsFr = <Bls12<ark_bls12_377::Config> as Pairing>::ScalarField;
 
-use groth16::{ext_wit::groth_ext_wit, ConstraintDomain};
-
-#[derive(
-    Clone, Debug, Default, PartialEq, CanonicalSerialize, CanonicalDeserialize,
-)]
-struct PackProvingKeyShare<E: Pairing> {
-    pub s: Vec<E::G1Affine>,
-    pub u: Vec<E::G1Affine>,
-    pub v: Vec<E::G2Affine>,
-    pub w: Vec<E::G1Affine>,
-    pub h: Vec<E::G1Affine>,
-}
-
-impl<E: Pairing> PackProvingKeyShare<E> {
-    pub fn rand<R: Rng>(
-        rng: &mut R,
-        domain_size: usize,
-        pp: &PackedSharingParams<E::ScalarField>,
-    ) -> Self {
-        let outer_time = start_timer!(|| "Dummy CRS packing");
-        let inner_time = start_timer!(|| "Packing S");
-        // println!("a_query:{}", pk.a_query.len());
-        let mut s_shares: Vec<E::G1Affine> =
-            vec![E::G1Affine::rand(rng); domain_size / pp.l];
-        for i in 1..s_shares.len() {
-            s_shares[i] = E::G1Affine::rand(rng);
-        }
-        end_timer!(inner_time);
-
-        let inner_time = start_timer!(|| "Packing U");
-        // println!("h_query:{}", pk.h_query.len());
-        let mut u_shares = vec![E::G1Affine::rand(rng); domain_size * 2 / pp.l];
-        for i in 1..u_shares.len() {
-            u_shares[i] = E::G1Affine::rand(rng);
-        }
-        end_timer!(inner_time);
-
-        let inner_time = start_timer!(|| "Packing W");
-        // println!("l_query:{}", pk.l_query.len());
-        let mut w_shares = vec![E::G1Affine::rand(rng); domain_size / pp.l];
-        for i in 1..w_shares.len() {
-            w_shares[i] = E::G1Affine::rand(rng);
-        }
-        end_timer!(inner_time);
-
-        let inner_time = start_timer!(|| "Packing H");
-        // println!("b_g1_query:{}", pk.b_g1_query.len());
-        let mut h_shares = vec![E::G1Affine::rand(rng); domain_size / pp.l];
-        for i in 1..h_shares.len() {
-            h_shares[i] = E::G1Affine::rand(rng);
-        }
-        end_timer!(inner_time);
-
-        let inner_time = start_timer!(|| "Packing V");
-        // println!("b_g2_query:{}", pk.b_g2_query.len());
-        let mut v_shares = vec![E::G2Affine::rand(rng); domain_size / pp.l];
-        for i in 1..v_shares.len() {
-            v_shares[i] = E::G2Affine::rand(rng);
-        }
-        end_timer!(inner_time);
-        end_timer!(outer_time);
-
-        PackProvingKeyShare::<E> {
-            s: s_shares,
-            u: u_shares,
-            v: v_shares,
-            w: w_shares,
-            h: h_shares,
-        }
-    }
-}
+use groth16::{
+    ext_wit::groth_ext_wit, proving_key::PackProvingKeyShare, ConstraintDomain,
+};
 
 fn dgroth<E: Pairing>(
     pp: &PackedSharingParams<E::ScalarField>,

@@ -101,7 +101,7 @@ mod tests {
     #[test]
     fn creates_qap() {
         let cfg = CircomConfig::<Bn254>::new(
-            "../fixtures/sha256/sha256.wasm",
+            "../fixtures/sha256/sha256_js/sha256.wasm",
             "../fixtures/sha256/sha256.r1cs",
         )
         .unwrap();
