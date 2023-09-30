@@ -42,6 +42,8 @@ where
         >,
     ) -> Vec<Self> {
         assert!(pp_g1.l == pp_g2.l);
+        assert!(pp_g1.n == pp_g2.n);
+        assert!(pp_g1.n == pp_g2.n);
 
         let mut packed_proving_key_shares = Vec::with_capacity(n_parties);
 
