@@ -1,3 +1,5 @@
+#![allow(clippy::needless_range_loop)]
+
 use ark_ec::{pairing::Pairing, AffineRepr};
 use ark_ff::{FftField, PrimeField};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
