@@ -1,20 +1,20 @@
 use ark_ec::{bls12::Bls12, pairing::Pairing};
 use ark_ff::UniformRand;
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+
 use ark_std::{end_timer, start_timer};
 use dist_primitives::{dmsm, Opt};
 use log::debug;
 use mpc_net::{MpcMultiNet as Net, MpcNet};
-use rand::Rng;
+
 use secret_sharing::pss::PackedSharingParams;
 use structopt::StructOpt;
 
-use ark_bls12_377;
 type BlsE = Bls12<ark_bls12_377::Config>;
 type BlsFr = <Bls12<ark_bls12_377::Config> as Pairing>::ScalarField;
 
 use groth16::{
-    ext_wit::groth_ext_wit, proving_key::PackProvingKeyShare, ConstraintDomain,
+    ext_wit::groth_ext_wit, proving_key::PackedProvingKeyShare,
+    ConstraintDomain,
 };
 
 fn dgroth<E: Pairing>(
@@ -47,8 +47,8 @@ fn dgroth<E: Pairing>(
     // Done
 
     let rng = &mut ark_std::test_rng();
-    let crs_share: PackProvingKeyShare<E> =
-        PackProvingKeyShare::<E>::rand(rng, cd.m, pp);
+    let crs_share: PackedProvingKeyShare<E> =
+        PackedProvingKeyShare::<E>::rand(rng, cd.m, pp);
     let a_share: Vec<E::ScalarField> =
         vec![E::ScalarField::rand(rng); crs_share.s.len()];
 

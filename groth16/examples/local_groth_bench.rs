@@ -6,7 +6,6 @@ use groth16::ConstraintDomain;
 use log::debug;
 use rand::Rng;
 
-use ark_bls12_377;
 type BlsE = Bls12<ark_bls12_377::Config>;
 type BlsFr = <Bls12<ark_bls12_377::Config> as Pairing>::ScalarField;
 
