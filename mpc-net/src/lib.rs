@@ -51,7 +51,10 @@ pub trait MpcNet {
     /// The king's computation is given by a function, `f`
     /// proceeds.
     #[inline]
-    fn king_compute(bytes: &[u8], f: impl Fn(Vec<Vec<u8>>) -> Vec<Vec<u8>>) -> Vec<u8> {
+    fn king_compute(
+        bytes: &[u8],
+        f: impl Fn(Vec<Vec<u8>>) -> Vec<Vec<u8>>,
+    ) -> Vec<u8> {
         let king_response = Self::send_bytes_to_king(bytes).map(f);
         Self::recv_bytes_from_king(king_response)
     }

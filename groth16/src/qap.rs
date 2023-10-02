@@ -4,6 +4,9 @@ use ark_poly::EvaluationDomain;
 use ark_relations::r1cs::{ConstraintMatrices, SynthesisError};
 use ark_std::{cfg_iter, cfg_iter_mut, vec};
 
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+
 /// A Quadratic Arithmetic Program (QAP) that holds
 /// witness reductions from R1CS.
 #[derive(Debug, Clone)]
@@ -29,8 +32,8 @@ pub fn qap<F: PrimeField, D: EvaluationDomain<F>>(
     let num_inputs = matrices.num_instance_variables;
     let num_constraints = matrices.num_constraints;
 
-    let domain =
-        D::new(num_constraints + num_inputs).ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
+    let domain = D::new(num_constraints + num_inputs)
+        .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
     let domain_size = domain.size();
 
     let mut a = vec![zero; domain_size];
@@ -65,8 +68,8 @@ pub fn qap<F: PrimeField, D: EvaluationDomain<F>>(
 
     let root_of_unity = {
         let domain_size_double = 2 * domain_size;
-        let domain_double =
-            D::new(domain_size_double).ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
+        let domain_double = D::new(domain_size_double)
+            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
         domain_double.element(1)
     };
 
@@ -92,14 +95,16 @@ pub fn qap<F: PrimeField, D: EvaluationDomain<F>>(
 mod tests {
     use super::*;
     use ark_bn254::{Bn254, Fr};
-    use ark_circom::{CircomBuilder, CircomConfig};
+    use ark_circom::{CircomBuilder, CircomConfig, CircomReduction};
+    use ark_crypto_primitives::snark::SNARK;
+    use ark_groth16::Groth16;
     use ark_poly::Radix2EvaluationDomain;
     use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem};
 
     #[test]
     fn creates_qap() {
         let cfg = CircomConfig::<Bn254>::new(
-            "../fixtures/sha256/sha256.wasm",
+            "../fixtures/sha256/sha256_js/sha256.wasm",
             "../fixtures/sha256/sha256.r1cs",
         )
         .unwrap();
@@ -114,7 +119,27 @@ mod tests {
         assert!(cs.is_satisfied().unwrap());
         let matrices = cs.to_matrices().unwrap();
 
-        let qap = qap::<Fr, Radix2EvaluationDomain<_>>(&matrices, &full_assignment);
+        let qap =
+            qap::<Fr, Radix2EvaluationDomain<_>>(&matrices, &full_assignment);
         eprintln!("{:?}", qap);
+    }
+
+    #[test]
+    fn setup() {
+        let cfg = CircomConfig::<Bn254>::new(
+            "../fixtures/sha256/sha256_js/sha256.wasm",
+            "../fixtures/sha256/sha256.r1cs",
+        )
+        .unwrap();
+        let builder = CircomBuilder::new(cfg);
+        let circom = builder.setup();
+        let rng = &mut ark_std::rand::thread_rng();
+        let (_pk, _vk) =
+            Groth16::<Bn254, CircomReduction>::circuit_specific_setup(
+                circom, rng,
+            )
+            .unwrap();
+
+        // Do something with keys.
     }
 }

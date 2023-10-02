@@ -6,7 +6,6 @@ use groth16::ConstraintDomain;
 use log::debug;
 use rand::Rng;
 
-use ark_bls12_377;
 type BlsE = Bls12<ark_bls12_377::Config>;
 type BlsFr = <Bls12<ark_bls12_377::Config> as Pairing>::ScalarField;
 
@@ -19,10 +18,14 @@ struct ProvingKey<E: Pairing> {
     pub h: Vec<E::G1Affine>,
 }
 
-fn local_dummy_crs<E: Pairing, R: Rng>(domain_size: usize, rng: &mut R) -> ProvingKey<E> {
+fn local_dummy_crs<E: Pairing, R: Rng>(
+    domain_size: usize,
+    rng: &mut R,
+) -> ProvingKey<E> {
     let outer_time = start_timer!(|| "Dummy CRS packing");
 
-    let mut s: Vec<<E as Pairing>::G1Affine> = vec![E::G1Affine::rand(rng); domain_size];
+    let mut s: Vec<<E as Pairing>::G1Affine> =
+        vec![E::G1Affine::rand(rng); domain_size];
     for i in 1..s.len() {
         s[i] = (s[i - 1] + s[i - 1]).into();
     }
@@ -103,7 +106,8 @@ fn localgroth_test<E: Pairing>(cd: &ConstraintDomain<E::ScalarField>) {
     cd.constraint2.fft_in_place(&mut w_eval);
 
     ///////////Multiply Shares
-    let mut h_eval: Vec<E::ScalarField> = vec![E::ScalarField::zero(); p_eval.len()];
+    let mut h_eval: Vec<E::ScalarField> =
+        vec![E::ScalarField::zero(); p_eval.len()];
     let t_eval: Vec<E::ScalarField> = vec![E::ScalarField::one(); h_eval.len()];
     for i in 0..p_eval.len() {
         h_eval[i] = p_eval[i] * q_eval[i] - w_eval[i];
@@ -124,7 +128,8 @@ fn localgroth_test<E: Pairing>(cd: &ConstraintDomain<E::ScalarField>) {
 
     let rng = &mut ark_std::test_rng();
     let crs: ProvingKey<E> = local_dummy_crs(cd.m, rng);
-    let a_share: Vec<E::ScalarField> = vec![E::ScalarField::rand(rng); crs.s.len()];
+    let a_share: Vec<E::ScalarField> =
+        vec![E::ScalarField::rand(rng); crs.s.len()];
 
     println!(
         "s:{}, v:{}, h:{}, w:{}, u:{}, a:{}, h:{}",

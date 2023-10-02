@@ -4,6 +4,7 @@ use ark_poly::{domain::EvaluationDomain, Radix2EvaluationDomain};
 pub mod ext_wit;
 pub mod pre_processing;
 pub mod proof;
+pub mod proving_key;
 pub mod qap;
 
 #[derive(Debug, Clone, PartialEq)]

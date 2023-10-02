@@ -39,45 +39,50 @@ pub fn d_pp<F: FftField + PrimeField + Field>(
     let received_shares = Net::send_to_king(&numden_rand);
     end_timer!(communication_timer);
 
-    let king_answer: Option<Vec<Vec<F>>> = received_shares.map(|numden_shares: Vec<Vec<F>>| {
-        // nx(m/l) -> (m/l)xn
-        debug_assert_eq!(numden_shares.len(), pp.n, "Mismatch of size in d_pp");
-        let dpp_timer = start_timer!(|| "DPP");
-        let numden_shares = transpose(numden_shares);
+    let king_answer: Option<Vec<Vec<F>>> =
+        received_shares.map(|numden_shares: Vec<Vec<F>>| {
+            // nx(m/l) -> (m/l)xn
+            debug_assert_eq!(
+                numden_shares.len(),
+                pp.n,
+                "Mismatch of size in d_pp"
+            );
+            let dpp_timer = start_timer!(|| "DPP");
+            let numden_shares = transpose(numden_shares);
 
-        // Unpack the secrets
-        // (m/l)xn -> m
-        // iterate over pxss_shares, unpack to get a vector and append all the vectors
-        let mut numden: Vec<F> = numden_shares
-            .into_iter()
-            .flat_map(|x| pp.unpack2(x))
-            .collect();
+            // Unpack the secrets
+            // (m/l)xn -> m
+            // iterate over pxss_shares, unpack to get a vector and append all the vectors
+            let mut numden: Vec<F> = numden_shares
+                .into_iter()
+                .flat_map(|x| pp.unpack2(x))
+                .collect();
 
-        for i in 0..numden.len() / 2 {
-            let den = numden[i + numden.len() / 2].inverse().unwrap();
-            numden[i] *= den;
-        }
+            for i in 0..numden.len() / 2 {
+                let den = numden[i + numden.len() / 2].inverse().unwrap();
+                numden[i] *= den;
+            }
 
-        numden.truncate(numden.len() / 2);
+            numden.truncate(numden.len() / 2);
 
-        // Compute the partial products across pxss
-        for i in 1..numden.len() {
-            let last = numden[i - 1];
-            numden[i] *= last;
-        }
+            // Compute the partial products across pxss
+            for i in 1..numden.len() {
+                let last = numden[i - 1];
+                numden[i] *= last;
+            }
 
-        // Pack the secrets
-        // m -> (m/l)xn
-        // (m/l)xl -> (m/l)xn
-        let pp_numden_shares = pack_vec(&numden, pp);
-        drop(numden);
+            // Pack the secrets
+            // m -> (m/l)xn
+            // (m/l)xl -> (m/l)xn
+            let pp_numden_shares = pack_vec(&numden, pp);
+            drop(numden);
 
-        // send shares to parties
-        // (m/l)xn -> nx(m/l)
-        let pp_numden_shares = transpose(pp_numden_shares);
-        end_timer!(dpp_timer);
-        pp_numden_shares
-    });
+            // send shares to parties
+            // (m/l)xn -> nx(m/l)
+            let pp_numden_shares = transpose(pp_numden_shares);
+            end_timer!(dpp_timer);
+            pp_numden_shares
+        });
 
     let communication_timer = start_timer!(|| "ComFromKing");
     let mut pp_numden_rand = Net::recv_from_king(king_answer);
