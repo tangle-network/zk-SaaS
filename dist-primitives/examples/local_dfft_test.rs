@@ -51,7 +51,7 @@ pub fn local_dfft_test<F: FftField + PrimeField>(
                     s1[j * (2 * poly_size) + k + poly_size][ii] = x - y;
                 }
             }
-            factor = factor * factor_stride;
+            factor *= factor_stride;
         }
     }
 
@@ -80,7 +80,7 @@ pub fn local_dfft_test<F: FftField + PrimeField>(
                 s2[k * (2usize.pow(i - 1)) + j] = x + y;
                 s2[(k + poly_size) * (2usize.pow(i - 1)) + j] = x - y;
             }
-            factor = factor * factor_stride;
+            factor *= factor_stride;
         }
         mem::swap(&mut s1, &mut s2);
     }

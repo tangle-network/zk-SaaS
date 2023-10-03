@@ -63,6 +63,20 @@ impl<F: FftField> PackedSharingParams<F> {
     /// Packs secrets into shares
     #[allow(unused)]
     pub fn pack_from_public(&self, mut secrets: Vec<F>) -> Vec<F> {
+        assert!(secrets.len() == self.l, "Secrets length mismatch");
+        self.pack_from_public_in_place(&mut secrets);
+        secrets
+    }
+
+    #[allow(unused)]
+    pub fn pack_from_public_rand(&self, mut secrets: Vec<F>) -> Vec<F> {
+        assert!(secrets.len() == self.l, "Secrets length mismatch");
+        let mut rng = ark_std::test_rng();
+        // Resize the secrets with t+1 random points
+        let rand_points = (0..self.t + 1)
+            .map(|_| F::rand(&mut rng))
+            .collect::<Vec<F>>();
+        secrets.extend_from_slice(&rand_points);
         self.pack_from_public_in_place(&mut secrets);
         secrets
     }
@@ -183,6 +197,40 @@ mod tests {
         let expected: Vec<F> = secrets.iter().map(|x| (*x) * (*x)).collect();
 
         pp.pack_from_public_in_place(&mut secrets);
+
+        let mut shares: Vec<F> = secrets.iter().map(|x| (*x) * (*x)).collect();
+
+        pp.unpack2_in_place(&mut shares);
+
+        assert_eq!(expected, shares);
+    }
+
+    #[test]
+    fn test_pack_rand() {
+        let pp = PackedSharingParams::<F>::new(L);
+
+        let rng = &mut ark_std::test_rng();
+        let secrets: [F; L] = UniformRand::rand(rng);
+        let mut secrets = secrets.to_vec();
+
+        let expected = secrets.clone();
+
+        secrets = pp.pack_from_public_rand(secrets);
+        pp.unpack_in_place(&mut secrets);
+
+        assert_eq!(expected, secrets);
+    }
+
+    #[test]
+    fn test_pack_rand_multiplication() {
+        let pp = PackedSharingParams::<F>::new(L);
+
+        let rng = &mut ark_std::test_rng();
+        let secrets: [F; L] = UniformRand::rand(rng);
+        let mut secrets = secrets.to_vec();
+        let expected: Vec<F> = secrets.iter().map(|x| (*x) * (*x)).collect();
+
+        secrets = pp.pack_from_public_rand(secrets);
 
         let mut shares: Vec<F> = secrets.iter().map(|x| (*x) * (*x)).collect();
 
