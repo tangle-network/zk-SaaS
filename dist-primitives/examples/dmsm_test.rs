@@ -37,8 +37,7 @@ pub fn d_msm_test<G: CurveGroup>(
         .map(|s| pp.pack_from_public(s.to_vec())[Net::party_id()])
         .collect();
 
-    let x_pub_aff: Vec<G::Affine> =
-        x_pub.iter().map(|s| (*s).into()).collect();
+    let x_pub_aff: Vec<G::Affine> = x_pub.iter().map(|s| (*s).into()).collect();
     let x_share_aff: Vec<G::Affine> =
         x_share.iter().map(|s| (*s).into()).collect();
 

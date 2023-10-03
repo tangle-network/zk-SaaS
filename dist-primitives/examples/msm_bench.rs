@@ -15,8 +15,7 @@ pub fn msm_test<G: CurveGroup>(dom: &Radix2EvaluationDomain<G::ScalarField>) {
         x_pub[i] = G::rand(rng);
     }
 
-    let x_pub_aff: Vec<G::Affine> =
-        x_pub.iter().map(|s| (*s).into()).collect();
+    let x_pub_aff: Vec<G::Affine> = x_pub.iter().map(|s| (*s).into()).collect();
 
     let nmsm = start_timer!(|| "Ark msm");
     G::msm(x_pub_aff.as_slice(), y_pub.as_slice()).unwrap();
