@@ -8,9 +8,10 @@ use mpc_net::{MpcMultiNet as Net, MpcNet};
 use secret_sharing::pss::PackedSharingParams;
 use structopt::StructOpt;
 
-pub fn d_msm_test<G: CurveGroup>(
+pub async fn d_msm_test<G: CurveGroup, Net: MpcNet>(
     pp: &PackedSharingParams<G::ScalarField>,
     dom: &Radix2EvaluationDomain<G::ScalarField>,
+    net: &mut Net,
 ) {
     // let m = pp.l*4;
     // let case_timer = start_timer!(||"affinemsm_test");
@@ -29,12 +30,12 @@ pub fn d_msm_test<G: CurveGroup>(
 
     let x_share: Vec<G> = x_pub
         .chunks(pp.l)
-        .map(|s| packexp_from_public(&s.to_vec(), &pp)[Net::party_id()])
+        .map(|s| packexp_from_public(&s.to_vec(), &pp)[net.party_id()])
         .collect();
 
     let y_share: Vec<G::ScalarField> = y_pub
         .chunks(pp.l)
-        .map(|s| pp.pack_from_public(s.to_vec())[Net::party_id()])
+        .map(|s| pp.pack_from_public(s.to_vec())[net.party_id()])
         .collect();
 
     let x_pub_aff: Vec<G::Affine> =
@@ -49,24 +50,28 @@ pub fn d_msm_test<G: CurveGroup>(
     end_timer!(nmsm);
 
     let dmsm = start_timer!(|| "Distributed msm");
-    let output = d_msm::<G>(&x_share_aff, &y_share, pp);
+    let output = d_msm::<G, Net>(&x_share_aff, &y_share, pp, net).await;
     end_timer!(dmsm);
 
-    if Net::am_king() {
+    if net.is_king() {
         assert_eq!(should_be_output, output);
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     env_logger::builder().format_timestamp(None).init();
 
     let opt = Opt::from_args();
 
-    Net::init_from_file(opt.input.to_str().unwrap(), opt.id);
+    let mut network = Net::new_from_path(opt.input.to_str().unwrap(), opt.id)
+        .await
+        .unwrap();
+    network.init().await;
 
     let pp = PackedSharingParams::<Fr>::new(opt.l);
     let dom = Radix2EvaluationDomain::<Fr>::new(opt.m).unwrap();
-    d_msm_test::<ark_bls12_377::G1Projective>(&pp, &dom);
+    d_msm_test::<ark_bls12_377::G1Projective, _>(&pp, &dom, &mut network).await;
 
-    Net::deinit();
+    network.deinit();
 }

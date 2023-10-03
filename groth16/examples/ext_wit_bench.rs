@@ -7,10 +7,11 @@ use rand::Rng;
 use secret_sharing::pss::PackedSharingParams;
 use structopt::StructOpt;
 
-fn groth_ext_wit<F: PrimeField, R: Rng>(
+async fn groth_ext_wit<F: PrimeField, R: Rng, Net: MpcNet>(
     rng: &mut R,
     cd: &ConstraintDomain<F>,
     pp: &PackedSharingParams<F>,
+    net: &mut Net,
 ) -> Vec<F> {
     let mut p_eval: Vec<F> = vec![F::rand(rng); cd.m / pp.l];
     // Shares of P, Q, W drop from the sky
@@ -24,22 +25,26 @@ fn groth_ext_wit<F: PrimeField, R: Rng>(
     let q_eval: Vec<F> = p_eval.clone();
     let w_eval: Vec<F> = p_eval.clone();
 
-    d_ext_wit(p_eval, q_eval, w_eval, rng, pp, cd)
+    d_ext_wit(p_eval, q_eval, w_eval, rng, pp, cd, net).await
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     env_logger::builder().format_timestamp(None).init();
 
     let opt = Opt::from_args();
 
-    Net::init_from_file(opt.input.to_str().unwrap(), opt.id);
+    let mut network = Net::new_from_path(opt.input.to_str().unwrap(), opt.id)
+        .await
+        .unwrap();
+    network.init().await;
 
     let rng = &mut ark_std::test_rng();
     for i in 14..15 {
         let pp = PackedSharingParams::<Fr>::new(opt.l);
         let cd = ConstraintDomain::<Fr>::new(1 << i);
-        groth_ext_wit(rng, &cd, &pp);
+        groth_ext_wit(rng, &cd, &pp, &mut network).await;
     }
 
-    Net::deinit();
+    network.deinit();
 }

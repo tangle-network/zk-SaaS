@@ -2,13 +2,13 @@ use crate::channel::MpcSerNet;
 use ark_ec::{CurveGroup, Group};
 use ark_poly::EvaluationDomain;
 use ark_std::{end_timer, start_timer};
-use mpc_net::{MpcMultiNet as Net, MpcNet};
 use secret_sharing::pss::PackedSharingParams;
 
-pub fn unpackexp<G: Group>(
+pub fn unpackexp<G: Group, Net: MpcSerNet>(
     mut shares: Vec<G>,
     degree2: bool,
     pp: &PackedSharingParams<G::ScalarField>,
+    net: &Net,
 ) -> Vec<G> {
     // interpolate shares
     pp.share.ifft_in_place(&mut shares);
@@ -17,7 +17,7 @@ pub fn unpackexp<G: Group>(
 
     #[cfg(debug_assertions)]
     {
-        let n = Net::n_parties();
+        let n = net.n_parties();
         let d: usize = if degree2 {
             2 * (pp.t + pp.l)
         } else {
@@ -63,10 +63,11 @@ pub fn packexp_from_public<G: Group>(
     result
 }
 
-pub fn d_msm<G: CurveGroup>(
+pub async fn d_msm<G: CurveGroup, Net: MpcSerNet>(
     bases: &[G::Affine],
     scalars: &[G::ScalarField],
     pp: &PackedSharingParams<G::ScalarField>,
+    net: &mut Net,
 ) -> G {
     // Using affine is important because we don't want to create an extra vector for converting Projective to Affine.
     // Eventually we do have to convert to Projective but this will be pp.l group elements instead of m()
@@ -80,13 +81,14 @@ pub fn d_msm<G: CurveGroup>(
     // Send to king who reduces and sends shamir shares (not packed).
     // Should be randomized. First convert to projective share.
 
+    let n_parties = net.n_parties();
     let king_answer: Option<Vec<G>> =
-        Net::send_to_king(&c_share).map(|shares: Vec<G>| {
-            let output: G = unpackexp(shares, true, pp).iter().sum();
-            vec![output; Net::n_parties()]
+        net.send_to_king(&c_share).await.map(|shares: Vec<G>| {
+            let output: G = unpackexp(shares, true, pp, &net).iter().sum();
+            vec![output; n_parties]
         });
 
-    Net::recv_from_king(king_answer)
+    net.recv_from_king(king_answer).await
 }
 
 #[cfg(test)]
@@ -101,6 +103,8 @@ mod tests {
 
     use ark_bls12_377::G1Affine;
     use ark_bls12_377::G1Projective as G1P;
+    use mpc_net::{MpcMultiNet, MpcNet};
+
     type F = <ark_ec::short_weierstrass::Projective<
         <ark_bls12_377::Config as Bls12Config>::G1Config,
     > as Group>::ScalarField;
@@ -114,21 +118,27 @@ mod tests {
     // const T:usize = N/2 - L - 1;
     const M: usize = 1 << 8;
 
-    #[test]
-    fn pack_unpack_test() {
+    #[tokio::test]
+    async fn pack_unpack_test() {
+        let mut net = MpcMultiNet::new_local_testnet(4).await.unwrap();
+        net.init().await;
+
         let pp = PackedSharingParams::<F>::new(L);
         let rng = &mut ark_std::test_rng();
         let secrets: [G1P; L] = UniformRand::rand(rng);
         let secrets = secrets.to_vec();
 
         let shares = packexp_from_public(&secrets, &pp);
-        let result = unpackexp(shares, false, &pp);
+        let result = unpackexp(shares, false, &pp, &mut net);
 
         assert_eq!(secrets, result);
     }
 
-    #[test]
-    fn pack_unpack2_test() {
+    #[tokio::test]
+    async fn pack_unpack2_test() {
+        let mut net = MpcMultiNet::new_local_testnet(4).await.unwrap();
+        net.init().await;
+
         let pp = PackedSharingParams::<F>::new(L);
         let rng = &mut ark_std::test_rng();
 
@@ -167,7 +177,7 @@ mod tests {
             result[i] = G1P::msm(&temp_aff, &fshares[i]).unwrap();
         }
 
-        let result: G1P = unpackexp(result, true, &pp).iter().sum();
+        let result: G1P = unpackexp(result, true, &pp, &mut net).iter().sum();
         assert_eq!(expected, result);
     }
 }

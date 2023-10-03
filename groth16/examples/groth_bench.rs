@@ -17,9 +17,10 @@ use groth16::{
     ConstraintDomain,
 };
 
-fn dgroth<E: Pairing>(
+async fn dgroth<E: Pairing, Net: MpcNet>(
     pp: &PackedSharingParams<E::ScalarField>,
     cd: &ConstraintDomain<E::ScalarField>,
+    net: &mut Net,
 ) {
     // Add preprocessing vectors of size 4m/l
     // process u and v to get ready for multiplication
@@ -52,7 +53,7 @@ fn dgroth<E: Pairing>(
     let a_share: Vec<E::ScalarField> =
         vec![E::ScalarField::rand(rng); crs_share.s.len()];
 
-    let h_share: Vec<E::ScalarField> = groth_ext_wit(rng, cd, pp);
+    let h_share: Vec<E::ScalarField> = groth_ext_wit(rng, cd, pp, net).await;
 
     println!(
         "s:{}, v:{}, h:{}, w:{}, u:{}, a:{}, h:{}",
@@ -67,15 +68,18 @@ fn dgroth<E: Pairing>(
 
     let msm_section = start_timer!(|| "MSM operations");
     // Compute msm while dropping the base vectors as they are not used again
-    let _pi_a_share: E::G1 = dmsm::d_msm(&crs_share.s, &a_share, pp);
+    let _pi_a_share: E::G1 = dmsm::d_msm(&crs_share.s, &a_share, pp, net).await;
     println!("s done");
-    let _pi_b_share: E::G2 = dmsm::d_msm(&crs_share.v, &a_share, pp);
+    let _pi_b_share: E::G2 = dmsm::d_msm(&crs_share.v, &a_share, pp, net).await;
     println!("v done");
-    let _pi_c_share1: E::G1 = dmsm::d_msm(&crs_share.h, &a_share, pp);
+    let _pi_c_share1: E::G1 =
+        dmsm::d_msm(&crs_share.h, &a_share, pp, net).await;
     println!("h done");
-    let _pi_c_share2: E::G1 = dmsm::d_msm(&crs_share.w, &a_share, pp);
+    let _pi_c_share2: E::G1 =
+        dmsm::d_msm(&crs_share.w, &a_share, pp, net).await;
     println!("w done");
-    let _pi_c_share3: E::G1 = dmsm::d_msm(&crs_share.u, &h_share, pp);
+    let _pi_c_share3: E::G1 =
+        dmsm::d_msm(&crs_share.u, &h_share, pp, net).await;
     println!("u done");
     let _pi_c_share: E::G1 = _pi_c_share1 + _pi_c_share2 + _pi_c_share3; //Additive notation for groups
                                                                          // Send _pi_a_share, _pi_b_share, _pi_c_share to client
@@ -84,18 +88,24 @@ fn dgroth<E: Pairing>(
     debug!("Done");
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     env_logger::builder().format_timestamp(None).init();
 
     let opt = Opt::from_args();
 
-    Net::init_from_file(opt.input.to_str().unwrap(), opt.id);
+    let mut network = Net::new_from_path(opt.input.to_str().unwrap(), opt.id)
+        .await
+        .unwrap();
+    network.init().await;
+
     let pp = PackedSharingParams::<BlsFr>::new(opt.l);
     let cd = ConstraintDomain::<BlsFr>::new(opt.m);
-    dgroth::<BlsE>(&pp, &cd);
-    if Net::am_king() {
-        println!("Stats: {:#?}", Net::stats());
+    dgroth::<BlsE, _>(&pp, &cd, &mut network).await;
+
+    if network.is_king() {
+        println!("Stats: {:#?}", network.stats());
     }
 
-    Net::deinit();
+    network.deinit();
 }

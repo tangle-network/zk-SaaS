@@ -7,9 +7,10 @@ use mpc_net::{MpcMultiNet as Net, MpcNet};
 use secret_sharing::pss::PackedSharingParams;
 use structopt::StructOpt;
 
-pub fn d_msm_test<G: CurveGroup>(
+pub async fn d_msm_test<G: CurveGroup, Net: MpcNet>(
     pp: &PackedSharingParams<G::ScalarField>,
     dom: &Radix2EvaluationDomain<G::ScalarField>,
+    net: &mut Net,
 ) {
     // let m = pp.l*4;
     // let case_timer = start_timer!(||"affinemsm_test");
@@ -31,23 +32,28 @@ pub fn d_msm_test<G: CurveGroup>(
         x_share.iter().map(|s| s.clone().into()).collect();
 
     let dmsm = start_timer!(|| "Distributed msm");
-    d_msm::<G>(&x_share_aff, &y_share, pp);
+    d_msm::<G, _>(&x_share_aff, &y_share, pp, net).await;
     end_timer!(dmsm);
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     env_logger::builder().format_timestamp(None).init();
 
     let opt = Opt::from_args();
 
-    Net::init_from_file(opt.input.to_str().unwrap(), opt.id);
+    let mut network = Net::new_from_path(opt.input.to_str().unwrap(), opt.id)
+        .await
+        .unwrap();
+    network.init().await;
 
     let pp = PackedSharingParams::<Fr>::new(opt.l);
     for i in 10..20 {
         let dom = Radix2EvaluationDomain::<Fr>::new(1 << i).unwrap();
         println!("domain size: {}", dom.size());
-        d_msm_test::<ark_bls12_377::G1Projective>(&pp, &dom);
+        d_msm_test::<ark_bls12_377::G1Projective, _>(&pp, &dom, &mut network)
+            .await;
     }
 
-    Net::deinit();
+    network.deinit();
 }

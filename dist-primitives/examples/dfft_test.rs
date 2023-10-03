@@ -12,9 +12,10 @@ use mpc_net::{MpcMultiNet as Net, MpcNet};
 use secret_sharing::pss::PackedSharingParams;
 use structopt::StructOpt;
 
-pub fn d_fft_test<F: FftField + PrimeField>(
+pub async fn d_fft_test<F: FftField + PrimeField, Net: MpcNet>(
     pp: &PackedSharingParams<F>,
     dom: &Radix2EvaluationDomain<F>,
+    net: &mut Net,
 ) {
     let mbyl: usize = dom.size() / pp.l;
     // We apply FFT on this vector
@@ -35,19 +36,17 @@ pub fn d_fft_test<F: FftField + PrimeField>(
         pp.pack_from_public_in_place(&mut pcoeff[i]);
     }
 
-    let pcoeff_share = pcoeff
-        .iter()
-        .map(|x| x[Net::party_id()])
-        .collect::<Vec<_>>();
+    let pcoeff_share =
+        pcoeff.iter().map(|x| x[net.party_id()]).collect::<Vec<_>>();
 
     // Rearranging x
     let myfft_timer = start_timer!(|| "Distributed FFT");
 
-    let peval_share = d_fft(pcoeff_share, false, 1, false, dom, pp);
+    let peval_share = d_fft(pcoeff_share, false, 1, false, dom, pp, net).await;
     end_timer!(myfft_timer);
 
     // Send to king who reconstructs and checks the answer
-    Net::send_to_king(&peval_share).map(|peval_shares| {
+    net.send_to_king(&peval_share).await.map(|peval_shares| {
         let peval_shares = transpose(peval_shares);
 
         let mut pevals: Vec<F> = peval_shares
@@ -56,18 +55,23 @@ pub fn d_fft_test<F: FftField + PrimeField>(
             .collect();
         pevals.reverse(); // todo: implement such that we avoid this reverse
 
-        if Net::am_king() {
+        if net.is_king() {
             assert_eq!(should_be_output, pevals);
         }
     });
 }
 
-pub fn main() {
+#[tokio::main]
+pub async fn main() {
     env_logger::builder().format_timestamp(None).init();
 
     let opt = Opt::from_args();
 
-    Net::init_from_file(opt.input.to_str().unwrap(), opt.id);
+    let mut network = Net::new_from_path(opt.input.to_str().unwrap(), opt.id)
+        .await
+        .unwrap();
+    network.init().await;
+
     let pp = PackedSharingParams::<Fr>::new(opt.l);
     let dom = Radix2EvaluationDomain::<Fr>::new(opt.m).unwrap();
     debug_assert_eq!(
@@ -76,7 +80,7 @@ pub fn main() {
         "Failed to obtain domain of size {}",
         opt.m
     );
-    d_fft_test::<ark_bls12_377::Fr>(&pp, &dom);
+    d_fft_test::<ark_bls12_377::Fr, _>(&pp, &dom, &mut network).await;
 
-    Net::deinit();
+    network.deinit();
 }
