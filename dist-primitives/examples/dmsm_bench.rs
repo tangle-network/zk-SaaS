@@ -28,7 +28,7 @@ pub fn d_msm_test<G: CurveGroup>(
     }
 
     let x_share_aff: Vec<G::Affine> =
-        x_share.iter().map(|s| s.clone().into()).collect();
+        x_share.iter().map(|s| (*s).into()).collect();
 
     let dmsm = start_timer!(|| "Distributed msm");
     d_msm::<G>(&x_share_aff, &y_share, pp);

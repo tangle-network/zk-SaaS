@@ -135,12 +135,12 @@ mod tests {
         let gsecrets: [G1P; M] = [G1P::rand(rng); M];
         let gsecrets = gsecrets.to_vec();
 
-        let fsecrets: [F; M] = [F::from(1 as u32); M];
+        let fsecrets: [F; M] = [F::from(1_u32); M];
         let fsecrets = fsecrets.to_vec();
 
         ///////////////////////////////////////
         let gsecrets_aff: Vec<G1Affine> =
-            gsecrets.iter().map(|s| s.clone().into()).collect();
+            gsecrets.iter().map(|s| (*s).into()).collect();
         let expected = G1P::msm(&gsecrets_aff, &fsecrets).unwrap();
         ///////////////////////////////////////
         let gshares: Vec<Vec<G1P>> = gsecrets
@@ -163,7 +163,7 @@ mod tests {
                 <ark_ec::short_weierstrass::Projective<
                     <ark_bls12_377::Config as Bls12Config>::G1Config,
                 > as CurveGroup>::Affine,
-            > = gshares[i].iter().map(|s| s.clone().into()).collect();
+            > = gshares[i].iter().map(|s| (*s).into()).collect();
             result[i] = G1P::msm(&temp_aff, &fshares[i]).unwrap();
         }
 
