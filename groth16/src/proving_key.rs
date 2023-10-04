@@ -175,7 +175,6 @@ mod tests {
     use ark_groth16::Groth16;
 
     #[test]
-    #[ignore = "takes a lot of time to run"]
     fn packed_pk_from_arkworks_pk() {
         let cfg = CircomConfig::<Bn254>::new(
             "../fixtures/sha256/sha256_js/sha256.wasm",
