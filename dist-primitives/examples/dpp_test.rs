@@ -50,7 +50,6 @@ pub async fn d_pp_test<F: FftField + PrimeField, Net: MpcNet>(
 #[tokio::main]
 async fn main() {
     env_logger::builder().format_timestamp(None).init();
-    let opt = Opt::from_args();
 
     let mut network = Net::new_from_path(opt.input.to_str().unwrap(), opt.id)
         .await

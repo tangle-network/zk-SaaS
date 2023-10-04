@@ -132,9 +132,10 @@ mod tests {
             let secrets = secrets.to_vec();
 
             let shares = packexp_from_public(&secrets, &pp);
-            let result= unpackexp(shares, false, &pp, net);
+            let result = unpackexp(shares, false, &pp, net);
             assert_eq!(secrets, result);
-        }).await;
+        })
+        .await;
     }
 
     #[tokio::test]
@@ -181,6 +182,7 @@ mod tests {
             }
             let result: G1P = unpackexp(result, true, &pp, net).iter().sum();
             assert_eq!(expected, result);
-        }).await;
+        })
+        .await;
     }
 }

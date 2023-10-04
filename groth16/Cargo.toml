@@ -2,6 +2,7 @@
 name = "groth16"
 version = "0.1.0"
 edition = "2021"
+autoexamples = false
 
 [dependencies]
 # ARK Libraries

@@ -18,7 +18,7 @@ use super::{MpcNet, Stats};
 #[derive(Debug)]
 struct Peer {
     id: usize,
-    addr: SocketAddr,
+    listen_addr: SocketAddr,
     stream: Option<TcpStream>,
 }
 
@@ -26,7 +26,7 @@ impl Clone for Peer {
     fn clone(&self) -> Self {
         Self {
             id: self.id,
-            addr: self.addr,
+            listen_addr: self.listen_addr,
             stream: None,
         }
     }
@@ -46,8 +46,11 @@ impl Connections {
         let n_minus_1 = self.n_parties() - 1;
         let my_id = self.id;
 
-        let peer_addrs = self.peers.iter().map(|p| (p.1.addr, *p.0)).collect::<HashMap<_, _>>();
-        let peer_addrs_reversed = peer_addrs.clone().into_iter().map(|r| (r.1, r.0)).collect::<HashMap<_, _>>();
+        let peer_addrs = self
+            .peers
+            .iter()
+            .map(|p| (*p.0, p.1.listen_addr))
+            .collect::<HashMap<_, _>>();
 
         let listener = self.listener.take().unwrap();
         let new_peers = Arc::new(Mutex::new(self.peers.clone()));
@@ -65,11 +68,14 @@ impl Connections {
 
         let server_task = async move {
             for _ in 0..inbound_connections_i_will_make {
-                let (stream, peer_addr) = listener.accept().await.unwrap();
-                println!("{my_id} accepted connection from {peer_addr}");
-                println!("Peer addrs: {:?}", peer_addrs);
-                let peer_id = peer_addrs.get(&peer_addr).copied().unwrap();
-                new_peers_server.lock().get_mut(&peer_id).unwrap().stream = Some(stream);
+                let (mut stream, _peer_addr) = listener.accept().await.unwrap();
+                // println!("{my_id} accepted connection from {peer_addr}");
+                let peer_id = stream.read_u32().await.unwrap();
+                new_peers_server
+                    .lock()
+                    .get_mut(&(peer_id as usize))
+                    .unwrap()
+                    .stream = Some(stream);
                 println!("{my_id} connected to peer {peer_id}")
             }
         };
@@ -78,16 +84,21 @@ impl Connections {
             // Wait some time for the server tasks to boot up
             tokio::time::sleep(Duration::from_millis(200)).await;
             // Listeners are all active, now, connect us to n-1 peers
-            let mut conns_made = 0;
-            for _ in 0..outbound_connections_i_will_make {
+            for conns_made in 0..outbound_connections_i_will_make {
                 // If I am 0, I will connect to 1 and 2
                 // If I am 1, I will connect to 2
                 // If I am 2, I will connect to no one (server will make the connections)
                 let next_peer_to_connect_to = my_id + conns_made + 1;
-                let peer_addr = peer_addrs_reversed.get(&next_peer_to_connect_to).unwrap();
-                let stream = TcpStream::connect(peer_addr).await.unwrap();
-                new_peers_client.lock().get_mut(&next_peer_to_connect_to).unwrap().stream = Some(stream);
-                conns_made += 1;
+                let peer_listen_addr =
+                    peer_addrs.get(&next_peer_to_connect_to).unwrap();
+                let mut stream =
+                    TcpStream::connect(peer_listen_addr).await.unwrap();
+                stream.write_u32(my_id as u32).await.unwrap();
+                new_peers_client
+                    .lock()
+                    .get_mut(&next_peer_to_connect_to)
+                    .unwrap()
+                    .stream = Some(stream);
                 println!("{my_id} connected to peer {next_peer_to_connect_to}")
             }
         };
@@ -103,8 +114,14 @@ impl Connections {
         let from_all = self.send_to_king(&[self.id as u8]).await;
         self.recv_from_king(from_all).await;
         for peer in &self.peers {
+            if peer.0 == &self.id {
+                continue;
+            }
+
             assert!(peer.1.stream.is_some());
         }
+
+        println!("Done with recv_from_king");
 
         end_timer!(timer);
     }
@@ -158,7 +175,8 @@ impl Connections {
         let r = if self.am_king() {
             self.stats.bytes_recv += self.peers.len() * m;
             let mut r = FuturesOrdered::new();
-            for (id, peer) in self.peers.iter_mut(){
+
+            for (id, peer) in self.peers.iter_mut() {
                 r.push_back(Box::pin(async move {
                     let mut bytes_in = vec![0u8; m];
                     if *id == own_id {
@@ -170,6 +188,7 @@ impl Connections {
                     bytes_in
                 }));
             }
+
             Some(r.collect().await)
         } else {
             self.stats.bytes_sent += m;
@@ -201,9 +220,7 @@ impl Connections {
             let bytes_size = (m as u64).to_le_bytes();
             self.stats.bytes_sent += self.peers.len() * (m + 8);
 
-            for (id, peer) in
-                self.peers.iter_mut().filter(|p| *p.0 != own_id)
-            {
+            for (id, peer) in self.peers.iter_mut().filter(|p| *p.0 != own_id) {
                 let stream = peer.stream.as_mut().unwrap();
                 assert_eq!(bytes_out[*id].len(), m);
                 stream.write_all(&bytes_size).await.unwrap();
@@ -213,7 +230,8 @@ impl Connections {
             end_timer!(timer);
             bytes_out[own_id].clone()
         } else {
-            let stream = self.peers.get_mut(&0).unwrap().stream.as_mut().unwrap();
+            let stream =
+                self.peers.get_mut(&0).unwrap().stream.as_mut().unwrap();
             let mut bytes_size = [0u8; 8];
             stream.read_exact(&mut bytes_size).await.unwrap();
             let m = u64::from_le_bytes(bytes_size) as usize;
@@ -257,14 +275,16 @@ impl LocalTestNet {
                 stats: Default::default(),
             };
             for peer_id in 0..n_parties {
-                if peer_id != my_party_id {
-                    let peer_addr = listen_addrs.get(&peer_id).copied().unwrap();
-                    connections.peers.insert(peer_id, Peer {
+                // NOTE: this is the listen addr
+                let peer_addr = listen_addrs.get(&peer_id).copied().unwrap();
+                connections.peers.insert(
+                    peer_id,
+                    Peer {
                         id: peer_id,
-                        addr: peer_addr,
+                        listen_addr: peer_addr,
                         stream: None,
-                    });
-                }
+                    },
+                );
             }
 
             nodes.insert(my_party_id, connections);
@@ -287,14 +307,20 @@ impl LocalTestNet {
 
     // For each node, run a function (a Future) provided by the parameter that accepts the node's Connection.
     // Then, run all these futures in a FuturesOrdered.
-    pub async fn simulate_network_round<'a, 'b: 'a, F: Future<Output=K> + Send + Sync, K: Send + Sync + 'b>(
+    pub async fn simulate_network_round<
+        'a,
+        'b: 'a,
+        F: Future<Output = K> + Send + Sync,
+        K: Send + Sync + 'b,
+    >(
         &'a mut self,
         f: impl Fn(&'a mut Connections) -> F + Send + Sync + Clone,
     ) -> Vec<K> {
         let mut futures = FuturesOrdered::new();
         for (_, connections) in self.nodes.iter_mut() {
             let next_f = f.clone();
-            futures.push_back(Box::pin(async move { next_f(connections).await }));
+            futures
+                .push_back(Box::pin(async move { next_f(connections).await }));
         }
         futures.collect().await
     }
@@ -303,8 +329,7 @@ impl LocalTestNet {
 #[async_trait]
 impl MpcNet for Connections {
     fn n_parties(&self) -> usize {
-        // We do not include ourself in the peers list, so add 1
-        self.peers.len() + 1
+        self.peers.len()
     }
 
     fn party_id(&self) -> usize {
@@ -312,10 +337,7 @@ impl MpcNet for Connections {
     }
 
     fn is_init(&self) -> bool {
-        self
-            .peers
-            .iter()
-            .all(|r| r.1.stream.is_some())
+        self.peers.iter().all(|r| r.1.stream.is_some())
     }
 
     fn deinit(&mut self) {
