@@ -7,7 +7,7 @@ use dist_primitives::{
     utils::pack::{pack_vec, transpose},
     Opt,
 };
-use mpc_net::{MpcMultiNet as Net, MpcNet};
+use mpc_net::{LocalTestNet as Net, MpcNet};
 use secret_sharing::pss::PackedSharingParams;
 use structopt::StructOpt;
 

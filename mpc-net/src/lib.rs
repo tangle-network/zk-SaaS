@@ -2,7 +2,7 @@ pub mod multi;
 
 use async_trait::async_trait;
 use auto_impl::auto_impl;
-pub use multi::MpcMultiNet;
+pub use multi::LocalTestNet;
 
 #[derive(Clone, Debug, Default)]
 pub struct Stats {
@@ -25,8 +25,6 @@ pub trait MpcNet: Send + Sync {
     fn n_parties(&self) -> usize;
     /// What is my party number (0 to n-1)?
     fn party_id(&self) -> usize;
-    /// Initializes the networking
-    async fn init(&mut self);
     /// Is the network layer initalized?
     fn is_init(&self) -> bool;
     /// Uninitialized the network layer, closing all connections.

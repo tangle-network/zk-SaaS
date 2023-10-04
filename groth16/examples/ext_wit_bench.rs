@@ -2,7 +2,7 @@ use ark_bls12_377::Fr;
 use ark_ff::PrimeField;
 use dist_primitives::Opt;
 use groth16::{ext_wit::d_ext_wit, ConstraintDomain};
-use mpc_net::{MpcMultiNet as Net, MpcNet};
+use mpc_net::{LocalTestNet as Net, MpcNet};
 use rand::Rng;
 use secret_sharing::pss::PackedSharingParams;
 use structopt::StructOpt;
