@@ -48,11 +48,9 @@ pub fn unpackexp<G: Group>(
 }
 
 pub fn packexp_from_public<G: Group>(
-    secrets: &Vec<G>,
+    secrets: &[G],
     pp: &PackedSharingParams<G::ScalarField>,
 ) -> Vec<G> {
-    debug_assert_eq!(secrets.len(), pp.l);
-
     let mut result = secrets.to_vec();
     // interpolate secrets
     pp.secret.ifft_in_place(&mut result);
@@ -145,7 +143,7 @@ mod tests {
         ///////////////////////////////////////
         let gshares: Vec<Vec<G1P>> = gsecrets
             .chunks(L)
-            .map(|s| packexp_from_public(&s.to_vec(), &pp))
+            .map(|s| packexp_from_public(s, &pp))
             .collect();
 
         let fshares: Vec<Vec<F>> = fsecrets
