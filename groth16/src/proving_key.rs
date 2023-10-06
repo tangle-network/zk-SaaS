@@ -45,7 +45,6 @@ where
     ) -> Vec<Self> {
         assert!(pp_g1.l == pp_g2.l);
         assert!(pp_g1.n == pp_g2.n);
-        assert!(pp_g1.n == pp_g2.n);
 
         let mut packed_proving_key_shares = Vec::with_capacity(n_parties);
 
@@ -66,19 +65,19 @@ where
             .collect::<Vec<_>>();
 
         let packed_s = cfg_chunks!(pre_packed_s, pp_g1.l)
-            .map(|chunk| packexp_from_public::<E::G1>(&chunk.to_vec(), &pp_g1))
+            .map(|chunk| packexp_from_public::<E::G1>(chunk, &pp_g1))
             .collect::<Vec<_>>();
         let packed_u = cfg_chunks!(pre_packed_u, pp_g1.l)
-            .map(|chunk| packexp_from_public::<E::G1>(&chunk.to_vec(), &pp_g1))
+            .map(|chunk| packexp_from_public::<E::G1>(chunk, &pp_g1))
             .collect::<Vec<_>>();
         let packed_w = cfg_chunks!(pre_packed_w, pp_g1.l)
-            .map(|chunk| packexp_from_public::<E::G1>(&chunk.to_vec(), &pp_g1))
+            .map(|chunk| packexp_from_public::<E::G1>(chunk, &pp_g1))
             .collect::<Vec<_>>();
         let packed_h = cfg_chunks!(pre_packed_h, pp_g1.l)
-            .map(|chunk| packexp_from_public::<E::G1>(&chunk.to_vec(), &pp_g1))
+            .map(|chunk| packexp_from_public::<E::G1>(chunk, &pp_g1))
             .collect::<Vec<_>>();
         let packed_v = cfg_chunks!(pre_packed_v, pp_g2.l)
-            .map(|chunk| packexp_from_public::<E::G2>(&chunk.to_vec(), &pp_g2))
+            .map(|chunk| packexp_from_public::<E::G2>(chunk, &pp_g2))
             .collect::<Vec<_>>();
 
         for i in 0..n_parties {
@@ -175,7 +174,6 @@ mod tests {
     use ark_groth16::Groth16;
 
     #[test]
-    #[ignore = "takes a lot of time to run"]
     fn packed_pk_from_arkworks_pk() {
         let cfg = CircomConfig::<Bn254>::new(
             "../fixtures/sha256/sha256_js/sha256.wasm",

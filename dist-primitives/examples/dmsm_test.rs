@@ -30,7 +30,7 @@ pub async fn d_msm_test<G: CurveGroup, Net: MpcNet>(
 
     let x_share: Vec<G> = x_pub
         .chunks(pp.l)
-        .map(|s| packexp_from_public(&s.to_vec(), &pp)[net.party_id()])
+        .map(|s| packexp_from_public(&s.to_vec(), pp)[net.party_id()])
         .collect();
 
     let y_share: Vec<G::ScalarField> = y_pub
@@ -38,15 +38,14 @@ pub async fn d_msm_test<G: CurveGroup, Net: MpcNet>(
         .map(|s| pp.pack_from_public(s.to_vec())[net.party_id()])
         .collect();
 
-    let x_pub_aff: Vec<G::Affine> =
-        x_pub.iter().map(|s| s.clone().into()).collect();
+    let x_pub_aff: Vec<G::Affine> = x_pub.iter().map(|s| (*s).into()).collect();
     let x_share_aff: Vec<G::Affine> =
-        x_share.iter().map(|s| s.clone().into()).collect();
+        x_share.iter().map(|s| (*s).into()).collect();
 
     // Will be comparing against this in the end
     let nmsm = start_timer!(|| "Ark msm");
     let should_be_output =
-        G::msm(&x_pub_aff.as_slice(), &y_pub.as_slice()).unwrap();
+        G::msm(x_pub_aff.as_slice(), y_pub.as_slice()).unwrap();
     end_timer!(nmsm);
 
     let dmsm = start_timer!(|| "Distributed msm");

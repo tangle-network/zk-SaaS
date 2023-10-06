@@ -29,7 +29,7 @@ pub async fn d_msm_test<G: CurveGroup, Net: MpcNet>(
     }
 
     let x_share_aff: Vec<G::Affine> =
-        x_share.iter().map(|s| s.clone().into()).collect();
+        x_share.iter().map(|s| (*s).into()).collect();
 
     let dmsm = start_timer!(|| "Distributed msm");
     d_msm::<G, _>(&x_share_aff, &y_share, pp, net).await;
