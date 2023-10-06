@@ -2,10 +2,9 @@ use ark_bls12_377::Fr;
 use ark_ec::CurveGroup;
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_std::{end_timer, start_timer, UniformRand, Zero};
-use dist_primitives::{dmsm::d_msm, Opt};
-use mpc_net::{LocalTestNet as Net, MpcNet};
+use dist_primitives::dmsm::d_msm;
+use mpc_net::{LocalTestNet as Net, MpcNet, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
-use structopt::StructOpt;
 
 pub async fn d_msm_test<G: CurveGroup, Net: MpcNet>(
     pp: &PackedSharingParams<G::ScalarField>,
@@ -32,28 +31,22 @@ pub async fn d_msm_test<G: CurveGroup, Net: MpcNet>(
         x_share.iter().map(|s| (*s).into()).collect();
 
     let dmsm = start_timer!(|| "Distributed msm");
-    d_msm::<G, _>(&x_share_aff, &y_share, pp, net).await;
+    d_msm::<G, _>(&x_share_aff, &y_share, pp, net, MultiplexedStreamID::One).await.unwrap();
     end_timer!(dmsm);
 }
 
 #[tokio::main]
 async fn main() {
     env_logger::builder().format_timestamp(None).init();
+    let mut network = Net::new_local_testnet(4).await.unwrap();
 
-    let opt = Opt::from_args();
-
-    let mut network = Net::new_from_path(opt.input.to_str().unwrap(), opt.id)
-        .await
-        .unwrap();
-    network.init().await;
-
-    let pp = PackedSharingParams::<Fr>::new(opt.l);
-    for i in 10..20 {
-        let dom = Radix2EvaluationDomain::<Fr>::new(1 << i).unwrap();
-        println!("domain size: {}", dom.size());
-        d_msm_test::<ark_bls12_377::G1Projective, _>(&pp, &dom, &mut network)
-            .await;
-    }
-
-    network.deinit();
+    network.simulate_network_round(|net| async move {
+        let pp = PackedSharingParams::<Fr>::new(2);
+        for i in 10..20 {
+            let dom = Radix2EvaluationDomain::<Fr>::new(1 << i).unwrap();
+            println!("domain size: {}", dom.size());
+            d_msm_test::<ark_bls12_377::G1Projective, _>(&pp, &dom, net)
+                .await;
+        }
+    }).await;
 }

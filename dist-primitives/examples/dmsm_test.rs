@@ -3,10 +3,9 @@ use ark_ec::CurveGroup;
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_std::{end_timer, start_timer, UniformRand};
 use dist_primitives::dmsm::packexp_from_public;
-use dist_primitives::{dmsm::d_msm, Opt};
-use mpc_net::{LocalTestNet as Net, MpcNet};
+use dist_primitives::dmsm::d_msm;
+use mpc_net::{LocalTestNet as Net, MpcNet, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
-use structopt::StructOpt;
 
 pub async fn d_msm_test<G: CurveGroup, Net: MpcNet>(
     pp: &PackedSharingParams<G::ScalarField>,
@@ -30,12 +29,12 @@ pub async fn d_msm_test<G: CurveGroup, Net: MpcNet>(
 
     let x_share: Vec<G> = x_pub
         .chunks(pp.l)
-        .map(|s| packexp_from_public(&s.to_vec(), pp)[net.party_id()])
+        .map(|s| packexp_from_public(&s.to_vec(), pp)[net.party_id() as usize])
         .collect();
 
     let y_share: Vec<G::ScalarField> = y_pub
         .chunks(pp.l)
-        .map(|s| pp.pack_from_public(s.to_vec())[net.party_id()])
+        .map(|s| pp.pack_from_public(s.to_vec())[net.party_id() as usize])
         .collect();
 
     let x_pub_aff: Vec<G::Affine> = x_pub.iter().map(|s| (*s).into()).collect();
@@ -49,7 +48,7 @@ pub async fn d_msm_test<G: CurveGroup, Net: MpcNet>(
     end_timer!(nmsm);
 
     let dmsm = start_timer!(|| "Distributed msm");
-    let output = d_msm::<G, Net>(&x_share_aff, &y_share, pp, net).await;
+    let output = d_msm::<G, Net>(&x_share_aff, &y_share, pp, net, MultiplexedStreamID::One).await.unwrap();
     end_timer!(dmsm);
 
     if net.is_king() {
@@ -61,16 +60,11 @@ pub async fn d_msm_test<G: CurveGroup, Net: MpcNet>(
 async fn main() {
     env_logger::builder().format_timestamp(None).init();
 
-    let opt = Opt::from_args();
+    let mut network = Net::new_local_testnet(4).await.unwrap();
 
-    let mut network = Net::new_from_path(opt.input.to_str().unwrap(), opt.id)
-        .await
-        .unwrap();
-    network.init().await;
-
-    let pp = PackedSharingParams::<Fr>::new(opt.l);
-    let dom = Radix2EvaluationDomain::<Fr>::new(opt.m).unwrap();
-    d_msm_test::<ark_bls12_377::G1Projective, _>(&pp, &dom, &mut network).await;
-
-    network.deinit();
+    network.simulate_network_round(|net| async move {
+        let pp = PackedSharingParams::<Fr>::new(2);
+        let dom = Radix2EvaluationDomain::<Fr>::new(8).unwrap();
+        d_msm_test::<ark_bls12_377::G1Projective, _>(&pp, &dom, net).await;
+    }).await;
 }

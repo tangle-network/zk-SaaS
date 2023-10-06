@@ -415,7 +415,7 @@ impl LocalTestNet {
     pub async fn simulate_network_round<
         'a,
         'b: 'a,
-        F: Future<Output = K> + Send + Sync,
+        F: Future<Output = K> + Send,
         K: Send + Sync + 'b,
     >(
         &'a mut self,

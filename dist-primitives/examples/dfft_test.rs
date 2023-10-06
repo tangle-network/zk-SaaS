@@ -6,11 +6,9 @@ use dist_primitives::{
     channel::MpcSerNet,
     dfft::{d_fft, fft_in_place_rearrange},
     utils::pack::transpose,
-    Opt,
 };
-use mpc_net::{LocalTestNet as Net, MpcNet};
+use mpc_net::{LocalTestNet as Net, MpcNet, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
-use structopt::StructOpt;
 
 pub async fn d_fft_test<F: FftField + PrimeField, Net: MpcNet>(
     pp: &PackedSharingParams<F>,
@@ -37,16 +35,16 @@ pub async fn d_fft_test<F: FftField + PrimeField, Net: MpcNet>(
     }
 
     let pcoeff_share =
-        pcoeff.iter().map(|x| x[net.party_id()]).collect::<Vec<_>>();
+        pcoeff.iter().map(|x| x[net.party_id() as usize]).collect::<Vec<_>>();
 
     // Rearranging x
     let myfft_timer = start_timer!(|| "Distributed FFT");
 
-    let peval_share = d_fft(pcoeff_share, false, 1, false, dom, pp, net).await;
+    let peval_share = d_fft(pcoeff_share, false, 1, false, dom, pp, net, MultiplexedStreamID::One).await.unwrap();
     end_timer!(myfft_timer);
 
     // Send to king who reconstructs and checks the answer
-    net.send_to_king(&peval_share).await.map(|peval_shares| {
+    net.send_to_king(&peval_share, MultiplexedStreamID::One).await.unwrap().map(|peval_shares| {
         let peval_shares = transpose(peval_shares);
 
         let mut pevals: Vec<F> = peval_shares
@@ -65,22 +63,16 @@ pub async fn d_fft_test<F: FftField + PrimeField, Net: MpcNet>(
 pub async fn main() {
     env_logger::builder().format_timestamp(None).init();
 
-    let opt = Opt::from_args();
-
-    let mut network = Net::new_from_path(opt.input.to_str().unwrap(), opt.id)
-        .await
-        .unwrap();
-    network.init().await;
-
-    let pp = PackedSharingParams::<Fr>::new(opt.l);
-    let dom = Radix2EvaluationDomain::<Fr>::new(opt.m).unwrap();
-    debug_assert_eq!(
-        dom.size(),
-        opt.m,
-        "Failed to obtain domain of size {}",
-        opt.m
-    );
-    d_fft_test::<ark_bls12_377::Fr, _>(&pp, &dom, &mut network).await;
-
-    network.deinit();
+    let mut network = Net::new_local_testnet(4).await.unwrap();
+    network.simulate_network_round(|net| async move {
+        let pp = PackedSharingParams::<Fr>::new(2);
+        let dom = Radix2EvaluationDomain::<Fr>::new(8).unwrap();
+        /*debug_assert_eq!(
+            dom.size(),
+            opt.m,
+            "Failed to obtain domain of size {}",
+            opt.m
+        );*/
+        d_fft_test::<ark_bls12_377::Fr, _>(&pp, &dom, net).await;
+    }).await;
 }

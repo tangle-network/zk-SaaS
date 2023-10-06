@@ -5,11 +5,9 @@ use dist_primitives::{
     channel::MpcSerNet,
     dpp::d_pp,
     utils::pack::{pack_vec, transpose},
-    Opt,
 };
-use mpc_net::{LocalTestNet as Net, MpcNet};
+use mpc_net::{LocalTestNet as Net, MpcNet, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
-use structopt::StructOpt;
 
 pub async fn d_pp_test<F: FftField + PrimeField, Net: MpcNet>(
     pp: &PackedSharingParams<F>,
@@ -29,11 +27,11 @@ pub async fn d_pp_test<F: FftField + PrimeField, Net: MpcNet>(
     // pack x
     let px = transpose(pack_vec(&x, pp));
 
-    let px_share = px[net.party_id()].clone();
-    let pp_px_share = d_pp(px_share.clone(), px_share.clone(), pp, net).await;
+    let px_share = px[net.party_id() as usize].clone();
+    let pp_px_share = d_pp(px_share.clone(), px_share.clone(), pp, net, MultiplexedStreamID::One).await.unwrap();
 
     // Send to king who reconstructs and checks the answer
-    net.send_to_king(&pp_px_share).await.map(|pp_px_shares| {
+    net.send_to_king(&pp_px_share, MultiplexedStreamID::One).await.unwrap().map(|pp_px_shares| {
         let pp_px_shares = transpose(pp_px_shares);
 
         let pp_px: Vec<F> = pp_px_shares
@@ -51,14 +49,10 @@ pub async fn d_pp_test<F: FftField + PrimeField, Net: MpcNet>(
 async fn main() {
     env_logger::builder().format_timestamp(None).init();
 
-    let mut network = Net::new_from_path(opt.input.to_str().unwrap(), opt.id)
-        .await
-        .unwrap();
-    network.init().await;
-
-    let pp = PackedSharingParams::<Fr>::new(opt.l);
-    let cd = Radix2EvaluationDomain::<Fr>::new(opt.m).unwrap();
-    d_pp_test::<ark_bls12_377::Fr, _>(&pp, &cd, &mut network).await;
-
-    network.deinit();
+    let mut network = Net::new_local_testnet(4).await.unwrap();
+    network.simulate_network_round(|net| async move {
+        let pp = PackedSharingParams::<Fr>::new(2);
+        let cd = Radix2EvaluationDomain::<Fr>::new(1 << 15).unwrap();
+        d_pp_test::<ark_bls12_377::Fr, _>(&pp, &cd, net).await;
+    }).await;
 }
