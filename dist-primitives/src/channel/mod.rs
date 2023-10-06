@@ -1,35 +1,59 @@
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use async_trait::async_trait;
 
-use mpc_net::MpcNet;
+use mpc_net::{MpcNet, MpcNetError};
 
 #[async_trait]
 pub trait MpcSerNet: MpcNet {
     async fn broadcast<T: CanonicalDeserialize + CanonicalSerialize + Send>(
         &mut self,
         out: &T,
-    ) -> Vec<T> {
+    ) -> Result<Vec<T>, MpcNetError> {
         let mut bytes_out = Vec::new();
         out.serialize_compressed(&mut bytes_out).unwrap();
-        let bytes_in = self.broadcast_bytes(&bytes_out).await;
-        bytes_in
+        let bytes_in = self.broadcast_bytes(&bytes_out).await?;
+        let results: Vec<Result<T, MpcNetError>> = bytes_in
             .into_iter()
-            .map(|b| T::deserialize_compressed(&b[..]).unwrap())
-            .collect()
+            .map(|b| {
+                T::deserialize_compressed(&b[..])
+                    .map_err(|err| MpcNetError::Generic(err.to_string()))
+            })
+            .collect();
+
+        let mut ret = Vec::new();
+        for result in results {
+            ret.push(result?);
+        }
+
+        Ok(ret)
     }
 
     async fn send_to_king<T: CanonicalDeserialize + CanonicalSerialize>(
         &mut self,
         out: &T,
-    ) -> Option<Vec<T>> {
+    ) -> Result<Option<Vec<T>>, MpcNetError> {
         let mut bytes_out = Vec::new();
         out.serialize_compressed(&mut bytes_out).unwrap();
-        self.send_bytes_to_king(&bytes_out).await.map(|bytes_in| {
-            bytes_in
+        let bytes_in = self.send_bytes_to_king(&bytes_out).await?;
+
+        if let Some(bytes_in) = bytes_in {
+            let results: Vec<Result<T, MpcNetError>> = bytes_in
                 .into_iter()
-                .map(|b| T::deserialize_compressed(&b[..]).unwrap())
-                .collect()
-        })
+                .map(|b| {
+                    T::deserialize_compressed(&b[..])
+                        .map_err(|err| MpcNetError::Generic(err.to_string()))
+                })
+                .collect();
+
+            let mut ret = Vec::new();
+            for result in results {
+                ret.push(result?);
+            }
+
+            Ok(Some(ret))
+        } else {
+            Ok(None)
+        }
     }
 
     async fn recv_from_king<
@@ -37,7 +61,7 @@ pub trait MpcSerNet: MpcNet {
     >(
         &mut self,
         out: Option<Vec<T>>,
-    ) -> T {
+    ) -> Result<T, MpcNetError> {
         let bytes = out.map(|outs| {
             outs.iter()
                 .map(|out| {
@@ -48,8 +72,8 @@ pub trait MpcSerNet: MpcNet {
                 .collect()
         });
 
-        let bytes_in = self.recv_bytes_from_king(bytes).await;
-        T::deserialize_compressed(&bytes_in[..]).unwrap()
+        let bytes_in = self.recv_bytes_from_king(bytes).await?;
+        Ok(T::deserialize_compressed(&bytes_in[..])?)
     }
 }
 

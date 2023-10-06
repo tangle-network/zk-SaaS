@@ -2,6 +2,7 @@ use crate::channel::MpcSerNet;
 use ark_ec::{CurveGroup, Group};
 use ark_poly::EvaluationDomain;
 use ark_std::{end_timer, start_timer};
+use mpc_net::MpcNetError;
 use secret_sharing::pss::PackedSharingParams;
 
 pub fn unpackexp<G: Group, Net: MpcSerNet>(
@@ -68,7 +69,7 @@ pub async fn d_msm<G: CurveGroup, Net: MpcSerNet>(
     scalars: &[G::ScalarField],
     pp: &PackedSharingParams<G::ScalarField>,
     net: &mut Net,
-) -> G {
+) -> Result<G, MpcNetError> {
     // Using affine is important because we don't want to create an extra vector for converting Projective to Affine.
     // Eventually we do have to convert to Projective but this will be pp.l group elements instead of m()
 
@@ -83,7 +84,7 @@ pub async fn d_msm<G: CurveGroup, Net: MpcSerNet>(
 
     let n_parties = net.n_parties();
     let king_answer: Option<Vec<G>> =
-        net.send_to_king(&c_share).await.map(|shares: Vec<G>| {
+        net.send_to_king(&c_share).await?.map(|shares: Vec<G>| {
             let output: G = unpackexp(shares, true, pp, &net).iter().sum();
             vec![output; n_parties]
         });

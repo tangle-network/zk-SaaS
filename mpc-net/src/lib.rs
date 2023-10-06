@@ -3,6 +3,7 @@ pub mod multi;
 use async_trait::async_trait;
 use auto_impl::auto_impl;
 pub use multi::LocalTestNet;
+use std::fmt::Debug;
 
 #[derive(Clone, Debug, Default)]
 pub struct Stats {
@@ -11,6 +12,18 @@ pub struct Stats {
     pub broadcasts: usize,
     pub to_king: usize,
     pub from_king: usize,
+}
+
+#[derive(Clone, Debug)]
+pub enum MpcNetError {
+    Generic(String),
+    Protocol { err: String, party: u32 },
+}
+
+impl<T: ToString> From<T> for MpcNetError {
+    fn from(e: T) -> Self {
+        MpcNetError::Generic(e.to_string())
+    }
 }
 
 #[async_trait]
@@ -24,7 +37,7 @@ pub trait MpcNet: Send + Sync {
     /// How many parties are there?
     fn n_parties(&self) -> usize;
     /// What is my party number (0 to n-1)?
-    fn party_id(&self) -> usize;
+    fn party_id(&self) -> u32;
     /// Is the network layer initalized?
     fn is_init(&self) -> bool;
     /// Uninitialized the network layer, closing all connections.
@@ -34,20 +47,23 @@ pub trait MpcNet: Send + Sync {
     /// Get statistics.
     fn stats(&self) -> &Stats;
     /// All parties send bytes to each other.
-    async fn broadcast_bytes(&mut self, bytes: &[u8]) -> Vec<Vec<u8>>;
+    async fn broadcast_bytes(
+        &mut self,
+        bytes: &[u8],
+    ) -> Result<Vec<Vec<u8>>, MpcNetError>;
     /// All parties send bytes to the king.
     async fn send_bytes_to_king(
         &mut self,
         bytes: &[u8],
-    ) -> Option<Vec<Vec<u8>>>;
+    ) -> Result<Option<Vec<Vec<u8>>>, MpcNetError>;
     /// All parties recv bytes from the king.
     /// Provide bytes iff you're the king!
     async fn recv_bytes_from_king(
         &mut self,
         bytes: Option<Vec<Vec<u8>>>,
-    ) -> Vec<u8>;
+    ) -> Result<Vec<u8>, MpcNetError>;
 
-    /// Everyone sends bytes to the king, who recieves those bytes, runs a computation on them, and
+    /// Everyone sends bytes to the king, who receives those bytes, runs a computation on them, and
     /// redistributes the resulting bytes.
     ///
     /// The king's computation is given by a function, `f`
@@ -57,8 +73,8 @@ pub trait MpcNet: Send + Sync {
         &mut self,
         bytes: &[u8],
         f: impl Fn(Vec<Vec<u8>>) -> Vec<Vec<u8>> + Send,
-    ) -> Vec<u8> {
-        let king_response = self.send_bytes_to_king(bytes).await.map(f);
+    ) -> Result<Vec<u8>, MpcNetError> {
+        let king_response = self.send_bytes_to_king(bytes).await?.map(f);
         self.recv_bytes_from_king(king_response).await
     }
 }

@@ -2,6 +2,7 @@ use ark_ff::{FftField, PrimeField};
 use ark_std::{end_timer, start_timer};
 use dist_primitives::channel::MpcSerNet;
 use dist_primitives::dfft::{d_fft, d_ifft};
+use mpc_net::MpcNetError;
 use rand::Rng;
 use secret_sharing::pss::PackedSharingParams;
 
@@ -15,7 +16,7 @@ pub async fn d_ext_wit<F: FftField + PrimeField, R: Rng, Net: MpcSerNet>(
     pp: &PackedSharingParams<F>,
     cd: &ConstraintDomain<F>,
     net: &mut Net,
-) -> Vec<F> {
+) -> Result<Vec<F>, MpcNetError> {
     // Preprocessing to account for memory usage
     let mut single_pp: Vec<Vec<F>> = vec![vec![F::one(); cd.m / pp.l]; 3];
     let mut double_pp: Vec<Vec<F>> = vec![vec![F::one(); 2 * cd.m / pp.l]; 11];
@@ -25,9 +26,12 @@ pub async fn d_ext_wit<F: FftField + PrimeField, R: Rng, Net: MpcSerNet>(
     // Starting with shares of evals
     // TODO: use FuturesOrdered below for concurrency, AFTER figuring out how to properly route messages
     // by treating each below as a sub-protocol
-    let p_coeff = d_ifft(p_eval, true, 2, false, &cd.constraint, pp, net).await;
-    let q_coeff = d_ifft(q_eval, true, 2, false, &cd.constraint, pp, net).await;
-    let w_coeff = d_ifft(w_eval, true, 2, false, &cd.constraint, pp, net).await;
+    let p_coeff =
+        d_ifft(p_eval, true, 2, false, &cd.constraint, pp, net).await?;
+    let q_coeff =
+        d_ifft(q_eval, true, 2, false, &cd.constraint, pp, net).await?;
+    let w_coeff =
+        d_ifft(w_eval, true, 2, false, &cd.constraint, pp, net).await?;
 
     // deleting randomness used
     single_pp.truncate(single_pp.len() - 3);
@@ -35,9 +39,12 @@ pub async fn d_ext_wit<F: FftField + PrimeField, R: Rng, Net: MpcSerNet>(
 
     /////////////FFT
     // Starting with shares of coefficients
-    let p_eval = d_fft(p_coeff, true, 1, false, &cd.constraint2, pp, net).await;
-    let q_eval = d_fft(q_coeff, true, 1, false, &cd.constraint2, pp, net).await;
-    let w_eval = d_fft(w_coeff, true, 1, false, &cd.constraint2, pp, net).await;
+    let p_eval =
+        d_fft(p_coeff, true, 1, false, &cd.constraint2, pp, net).await?;
+    let q_eval =
+        d_fft(q_coeff, true, 1, false, &cd.constraint2, pp, net).await?;
+    let w_eval =
+        d_fft(w_coeff, true, 1, false, &cd.constraint2, pp, net).await?;
 
     // deleting randomness used
     double_pp.truncate(double_pp.len() - 6);
@@ -67,7 +74,7 @@ pub async fn d_ext_wit<F: FftField + PrimeField, R: Rng, Net: MpcSerNet>(
 
     // Parties apply FFT1 locally
     let mut h_coeff =
-        d_ifft(h_eval, false, 1, true, &cd.constraint2, pp, net).await;
+        d_ifft(h_eval, false, 1, true, &cd.constraint2, pp, net).await?;
 
     // deleting randomness used
     double_pp.truncate(double_pp.len() - 2);
@@ -75,7 +82,7 @@ pub async fn d_ext_wit<F: FftField + PrimeField, R: Rng, Net: MpcSerNet>(
     h_coeff.truncate(2 * cd.m);
     end_timer!(fft_section);
 
-    h_coeff
+    Ok(h_coeff)
 }
 
 pub async fn groth_ext_wit<F: PrimeField, R: Rng, Net: MpcSerNet>(
@@ -83,7 +90,7 @@ pub async fn groth_ext_wit<F: PrimeField, R: Rng, Net: MpcSerNet>(
     cd: &ConstraintDomain<F>,
     pp: &PackedSharingParams<F>,
     net: &mut Net,
-) -> Vec<F> {
+) -> Result<Vec<F>, MpcNetError> {
     let mut p_eval: Vec<F> = vec![F::rand(rng); cd.m / pp.l];
     // Shares of P, Q, W drop from the sky
 

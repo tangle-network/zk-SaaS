@@ -6,6 +6,7 @@ use ark_ff::{FftField, PrimeField};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_std::{end_timer, log2, start_timer};
 use log::debug;
+use mpc_net::MpcNetError;
 use secret_sharing::pss::PackedSharingParams;
 use std::mem;
 
@@ -21,7 +22,7 @@ pub async fn d_fft<F: FftField + PrimeField, Net: MpcSerNet>(
     dom: &Radix2EvaluationDomain<F>,
     pp: &PackedSharingParams<F>,
     net: &mut Net,
-) -> Vec<F> {
+) -> Result<Vec<F>, MpcNetError> {
     debug_assert_eq!(
         pcoeff_share.len() * pp.l,
         dom.size(),
@@ -45,7 +46,7 @@ pub async fn d_ifft<F: FftField + PrimeField, Net: MpcSerNet>(
     dom: &Radix2EvaluationDomain<F>,
     pp: &PackedSharingParams<F>,
     net: &mut Net,
-) -> Vec<F> {
+) -> Result<Vec<F>, MpcNetError> {
     debug_assert_eq!(
         peval_share.len() * pp.l,
         dom.size(),
@@ -157,14 +158,14 @@ async fn fft2_with_rearrange_pad<F: FftField + PrimeField, Net: MpcSerNet>(
     dom: &Radix2EvaluationDomain<F>,
     pp: &PackedSharingParams<F>,
     net: &mut Net,
-) -> Vec<F> {
+) -> Result<Vec<F>, MpcNetError> {
     // King applies FFT2 with rearrange
 
     let mbyl = px.len();
     println!("mbyl: {}", mbyl);
 
     let communication_timer = start_timer!(|| "ComToKing");
-    let received_shares = net.send_to_king(&px).await;
+    let received_shares = net.send_to_king(&px).await?;
     end_timer!(communication_timer);
 
     let king_answer = received_shares.map(|all_shares| {
@@ -219,10 +220,10 @@ async fn fft2_with_rearrange_pad<F: FftField + PrimeField, Net: MpcSerNet>(
     drop(px);
 
     let communication_timer = start_timer!(|| "ComFromKing");
-    let got_from_king = net.recv_from_king(king_answer).await;
+    let got_from_king = net.recv_from_king(king_answer).await?;
     end_timer!(communication_timer);
 
-    got_from_king
+    Ok(got_from_king)
 }
 
 pub fn fft_in_place_rearrange<F: FftField + PrimeField>(data: &mut Vec<F>) {
