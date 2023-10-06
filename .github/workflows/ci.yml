@@ -9,10 +9,30 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
+  integration_tests:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
 
+      - name: DMSM Test
+        run: ./scripts/dmsm_test.zsh
+
+      - name: DFFT Test
+        run: ./scripts/dfft_test.zsh
+
+      - name: DPP Test
+        run: ./scripts/dpp_test.zsh
+
+      - name: Extended Witness Test
+        run: ./scripts/ext_wit_test.zsh
+
+  build:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
       - name: Setup Rust
