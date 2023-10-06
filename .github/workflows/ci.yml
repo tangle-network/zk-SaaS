@@ -19,6 +19,9 @@ jobs:
           toolchain: stable
           override: true
 
+      - name: Build Artifacts
+        run: cargo build --release --examples
+
       - name: DMSM Test
         run: ./scripts/dmsm_test.zsh
 
