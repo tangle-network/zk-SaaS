@@ -109,7 +109,7 @@ async fn main() {
     network
         .simulate_network_round(|net| async move {
             let pp = PackedSharingParams::<BlsFr>::new(2);
-            let cd = ConstraintDomain::<BlsFr>::new(4);
+            let cd = ConstraintDomain::<BlsFr>::new(32768);
             dgroth::<BlsE, _>(&pp, &cd, net).await;
         })
         .await;

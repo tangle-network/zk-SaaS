@@ -73,7 +73,7 @@ async fn main() {
     network
         .simulate_network_round(|net| async move {
             let pp = PackedSharingParams::<Fr>::new(2);
-            let dom = Radix2EvaluationDomain::<Fr>::new(8).unwrap();
+            let dom = Radix2EvaluationDomain::<Fr>::new(32768).unwrap();
             d_msm_test::<ark_bls12_377::G1Projective, _>(&pp, &dom, net).await;
         })
         .await;
