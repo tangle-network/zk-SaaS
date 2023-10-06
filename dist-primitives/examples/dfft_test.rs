@@ -34,29 +34,45 @@ pub async fn d_fft_test<F: FftField + PrimeField, Net: MpcNet>(
         pp.pack_from_public_in_place(&mut pcoeff[i]);
     }
 
-    let pcoeff_share =
-        pcoeff.iter().map(|x| x[net.party_id() as usize]).collect::<Vec<_>>();
+    let pcoeff_share = pcoeff
+        .iter()
+        .map(|x| x[net.party_id() as usize])
+        .collect::<Vec<_>>();
 
     // Rearranging x
     let myfft_timer = start_timer!(|| "Distributed FFT");
 
-    let peval_share = d_fft(pcoeff_share, false, 1, false, dom, pp, net, MultiplexedStreamID::One).await.unwrap();
+    let peval_share = d_fft(
+        pcoeff_share,
+        false,
+        1,
+        false,
+        dom,
+        pp,
+        net,
+        MultiplexedStreamID::One,
+    )
+    .await
+    .unwrap();
     end_timer!(myfft_timer);
 
     // Send to king who reconstructs and checks the answer
-    net.send_to_king(&peval_share, MultiplexedStreamID::One).await.unwrap().map(|peval_shares| {
-        let peval_shares = transpose(peval_shares);
+    net.send_to_king(&peval_share, MultiplexedStreamID::One)
+        .await
+        .unwrap()
+        .map(|peval_shares| {
+            let peval_shares = transpose(peval_shares);
 
-        let mut pevals: Vec<F> = peval_shares
-            .into_iter()
-            .flat_map(|x| pp.unpack(x))
-            .collect();
-        pevals.reverse(); // todo: implement such that we avoid this reverse
+            let mut pevals: Vec<F> = peval_shares
+                .into_iter()
+                .flat_map(|x| pp.unpack(x))
+                .collect();
+            pevals.reverse(); // todo: implement such that we avoid this reverse
 
-        if net.is_king() {
-            assert_eq!(should_be_output, pevals);
-        }
-    });
+            if net.is_king() {
+                assert_eq!(should_be_output, pevals);
+            }
+        });
 }
 
 #[tokio::main]
@@ -64,15 +80,17 @@ pub async fn main() {
     env_logger::builder().format_timestamp(None).init();
 
     let mut network = Net::new_local_testnet(4).await.unwrap();
-    network.simulate_network_round(|net| async move {
-        let pp = PackedSharingParams::<Fr>::new(2);
-        let dom = Radix2EvaluationDomain::<Fr>::new(8).unwrap();
-        /*debug_assert_eq!(
-            dom.size(),
-            opt.m,
-            "Failed to obtain domain of size {}",
-            opt.m
-        );*/
-        d_fft_test::<ark_bls12_377::Fr, _>(&pp, &dom, net).await;
-    }).await;
+    network
+        .simulate_network_round(|net| async move {
+            let pp = PackedSharingParams::<Fr>::new(2);
+            let dom = Radix2EvaluationDomain::<Fr>::new(8).unwrap();
+            /*debug_assert_eq!(
+                dom.size(),
+                opt.m,
+                "Failed to obtain domain of size {}",
+                opt.m
+            );*/
+            d_fft_test::<ark_bls12_377::Fr, _>(&pp, &dom, net).await;
+        })
+        .await;
 }

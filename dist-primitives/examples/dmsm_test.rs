@@ -2,8 +2,8 @@ use ark_bls12_377::Fr;
 use ark_ec::CurveGroup;
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_std::{end_timer, start_timer, UniformRand};
-use dist_primitives::dmsm::packexp_from_public;
 use dist_primitives::dmsm::d_msm;
+use dist_primitives::dmsm::packexp_from_public;
 use mpc_net::{LocalTestNet as Net, MpcNet, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
 
@@ -48,7 +48,15 @@ pub async fn d_msm_test<G: CurveGroup, Net: MpcNet>(
     end_timer!(nmsm);
 
     let dmsm = start_timer!(|| "Distributed msm");
-    let output = d_msm::<G, Net>(&x_share_aff, &y_share, pp, net, MultiplexedStreamID::One).await.unwrap();
+    let output = d_msm::<G, Net>(
+        &x_share_aff,
+        &y_share,
+        pp,
+        net,
+        MultiplexedStreamID::One,
+    )
+    .await
+    .unwrap();
     end_timer!(dmsm);
 
     if net.is_king() {
@@ -62,9 +70,11 @@ async fn main() {
 
     let mut network = Net::new_local_testnet(4).await.unwrap();
 
-    network.simulate_network_round(|net| async move {
-        let pp = PackedSharingParams::<Fr>::new(2);
-        let dom = Radix2EvaluationDomain::<Fr>::new(8).unwrap();
-        d_msm_test::<ark_bls12_377::G1Projective, _>(&pp, &dom, net).await;
-    }).await;
+    network
+        .simulate_network_round(|net| async move {
+            let pp = PackedSharingParams::<Fr>::new(2);
+            let dom = Radix2EvaluationDomain::<Fr>::new(8).unwrap();
+            d_msm_test::<ark_bls12_377::G1Projective, _>(&pp, &dom, net).await;
+        })
+        .await;
 }

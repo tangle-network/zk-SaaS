@@ -28,21 +28,32 @@ pub async fn d_pp_test<F: FftField + PrimeField, Net: MpcNet>(
     let px = transpose(pack_vec(&x, pp));
 
     let px_share = px[net.party_id() as usize].clone();
-    let pp_px_share = d_pp(px_share.clone(), px_share.clone(), pp, net, MultiplexedStreamID::One).await.unwrap();
+    let pp_px_share = d_pp(
+        px_share.clone(),
+        px_share.clone(),
+        pp,
+        net,
+        MultiplexedStreamID::One,
+    )
+    .await
+    .unwrap();
 
     // Send to king who reconstructs and checks the answer
-    net.send_to_king(&pp_px_share, MultiplexedStreamID::One).await.unwrap().map(|pp_px_shares| {
-        let pp_px_shares = transpose(pp_px_shares);
+    net.send_to_king(&pp_px_share, MultiplexedStreamID::One)
+        .await
+        .unwrap()
+        .map(|pp_px_shares| {
+            let pp_px_shares = transpose(pp_px_shares);
 
-        let pp_px: Vec<F> = pp_px_shares
-            .into_iter()
-            .flat_map(|x| pp.unpack(x))
-            .collect();
+            let pp_px: Vec<F> = pp_px_shares
+                .into_iter()
+                .flat_map(|x| pp.unpack(x))
+                .collect();
 
-        if net.is_king() {
-            debug_assert_eq!(should_be_output, pp_px);
-        }
-    });
+            if net.is_king() {
+                debug_assert_eq!(should_be_output, pp_px);
+            }
+        });
 }
 
 #[tokio::main]
@@ -50,9 +61,11 @@ async fn main() {
     env_logger::builder().format_timestamp(None).init();
 
     let mut network = Net::new_local_testnet(4).await.unwrap();
-    network.simulate_network_round(|net| async move {
-        let pp = PackedSharingParams::<Fr>::new(2);
-        let cd = Radix2EvaluationDomain::<Fr>::new(1 << 15).unwrap();
-        d_pp_test::<ark_bls12_377::Fr, _>(&pp, &cd, net).await;
-    }).await;
+    network
+        .simulate_network_round(|net| async move {
+            let pp = PackedSharingParams::<Fr>::new(2);
+            let cd = Radix2EvaluationDomain::<Fr>::new(1 << 15).unwrap();
+            d_pp_test::<ark_bls12_377::Fr, _>(&pp, &cd, net).await;
+        })
+        .await;
 }

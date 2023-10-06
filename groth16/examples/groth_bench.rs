@@ -2,12 +2,11 @@ use ark_ec::{bls12::Bls12, pairing::Pairing};
 use ark_ff::UniformRand;
 
 use ark_std::{end_timer, start_timer};
-use dist_primitives::{dmsm, Opt};
+use dist_primitives::dmsm;
 use log::debug;
-use mpc_net::{LocalTestNet as Net, MpcNet};
+use mpc_net::{LocalTestNet as Net, MpcNet, MultiplexedStreamID};
 
 use secret_sharing::pss::PackedSharingParams;
-use structopt::StructOpt;
 
 type BlsE = Bls12<ark_bls12_377::Config>;
 type BlsFr = <Bls12<ark_bls12_377::Config> as Pairing>::ScalarField;
@@ -53,7 +52,8 @@ async fn dgroth<E: Pairing, Net: MpcNet>(
     let a_share: Vec<E::ScalarField> =
         vec![E::ScalarField::rand(rng); crs_share.s.len()];
 
-    let h_share: Vec<E::ScalarField> = groth_ext_wit(rng, cd, pp, net).await;
+    let h_share: Vec<E::ScalarField> =
+        groth_ext_wit(rng, cd, pp, net).await.unwrap();
 
     println!(
         "s:{}, v:{}, h:{}, w:{}, u:{}, a:{}, h:{}",
@@ -68,18 +68,30 @@ async fn dgroth<E: Pairing, Net: MpcNet>(
 
     let msm_section = start_timer!(|| "MSM operations");
     // Compute msm while dropping the base vectors as they are not used again
-    let _pi_a_share: E::G1 = dmsm::d_msm(&crs_share.s, &a_share, pp, net).await;
+    let _pi_a_share: E::G1 =
+        dmsm::d_msm(&crs_share.s, &a_share, pp, net, MultiplexedStreamID::One)
+            .await
+            .unwrap();
     println!("s done");
-    let _pi_b_share: E::G2 = dmsm::d_msm(&crs_share.v, &a_share, pp, net).await;
+    let _pi_b_share: E::G2 =
+        dmsm::d_msm(&crs_share.v, &a_share, pp, net, MultiplexedStreamID::One)
+            .await
+            .unwrap();
     println!("v done");
     let _pi_c_share1: E::G1 =
-        dmsm::d_msm(&crs_share.h, &a_share, pp, net).await;
+        dmsm::d_msm(&crs_share.h, &a_share, pp, net, MultiplexedStreamID::One)
+            .await
+            .unwrap();
     println!("h done");
     let _pi_c_share2: E::G1 =
-        dmsm::d_msm(&crs_share.w, &a_share, pp, net).await;
+        dmsm::d_msm(&crs_share.w, &a_share, pp, net, MultiplexedStreamID::One)
+            .await
+            .unwrap();
     println!("w done");
     let _pi_c_share3: E::G1 =
-        dmsm::d_msm(&crs_share.u, &h_share, pp, net).await;
+        dmsm::d_msm(&crs_share.u, &h_share, pp, net, MultiplexedStreamID::One)
+            .await
+            .unwrap();
     println!("u done");
     let _pi_c_share: E::G1 = _pi_c_share1 + _pi_c_share2 + _pi_c_share3; //Additive notation for groups
                                                                          // Send _pi_a_share, _pi_b_share, _pi_c_share to client
@@ -92,20 +104,13 @@ async fn dgroth<E: Pairing, Net: MpcNet>(
 async fn main() {
     env_logger::builder().format_timestamp(None).init();
 
-    let opt = Opt::from_args();
+    let mut network = Net::new_local_testnet(4).await.unwrap();
 
-    let mut network = Net::new_from_path(opt.input.to_str().unwrap(), opt.id)
-        .await
-        .unwrap();
-    network.init().await;
-
-    let pp = PackedSharingParams::<BlsFr>::new(opt.l);
-    let cd = ConstraintDomain::<BlsFr>::new(opt.m);
-    dgroth::<BlsE, _>(&pp, &cd, &mut network).await;
-
-    if network.is_king() {
-        println!("Stats: {:#?}", network.stats());
-    }
-
-    network.deinit();
+    network
+        .simulate_network_round(|net| async move {
+            let pp = PackedSharingParams::<BlsFr>::new(2);
+            let cd = ConstraintDomain::<BlsFr>::new(4);
+            dgroth::<BlsE, _>(&pp, &cd, net).await;
+        })
+        .await;
 }

@@ -31,7 +31,9 @@ pub async fn d_msm_test<G: CurveGroup, Net: MpcNet>(
         x_share.iter().map(|s| (*s).into()).collect();
 
     let dmsm = start_timer!(|| "Distributed msm");
-    d_msm::<G, _>(&x_share_aff, &y_share, pp, net, MultiplexedStreamID::One).await.unwrap();
+    d_msm::<G, _>(&x_share_aff, &y_share, pp, net, MultiplexedStreamID::One)
+        .await
+        .unwrap();
     end_timer!(dmsm);
 }
 
@@ -40,13 +42,15 @@ async fn main() {
     env_logger::builder().format_timestamp(None).init();
     let mut network = Net::new_local_testnet(4).await.unwrap();
 
-    network.simulate_network_round(|net| async move {
-        let pp = PackedSharingParams::<Fr>::new(2);
-        for i in 10..20 {
-            let dom = Radix2EvaluationDomain::<Fr>::new(1 << i).unwrap();
-            println!("domain size: {}", dom.size());
-            d_msm_test::<ark_bls12_377::G1Projective, _>(&pp, &dom, net)
-                .await;
-        }
-    }).await;
+    network
+        .simulate_network_round(|net| async move {
+            let pp = PackedSharingParams::<Fr>::new(2);
+            for i in 10..20 {
+                let dom = Radix2EvaluationDomain::<Fr>::new(1 << i).unwrap();
+                println!("domain size: {}", dom.size());
+                d_msm_test::<ark_bls12_377::G1Projective, _>(&pp, &dom, net)
+                    .await;
+            }
+        })
+        .await;
 }
