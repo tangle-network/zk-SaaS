@@ -26,6 +26,13 @@ impl<T: ToString> From<T> for MpcNetError {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Copy)]
+pub enum MultiplexedStreamID {
+    Zero = 0,
+    One = 1,
+    Two = 2,
+}
+
 #[async_trait]
 #[auto_impl(&mut)]
 pub trait MpcNet: Send + Sync {
@@ -50,17 +57,20 @@ pub trait MpcNet: Send + Sync {
     async fn broadcast_bytes(
         &mut self,
         bytes: &[u8],
+        sid: MultiplexedStreamID,
     ) -> Result<Vec<Vec<u8>>, MpcNetError>;
     /// All parties send bytes to the king.
     async fn send_bytes_to_king(
         &mut self,
         bytes: &[u8],
+        sid: MultiplexedStreamID,
     ) -> Result<Option<Vec<Vec<u8>>>, MpcNetError>;
     /// All parties recv bytes from the king.
     /// Provide bytes iff you're the king!
     async fn recv_bytes_from_king(
         &mut self,
         bytes: Option<Vec<Vec<u8>>>,
+        sid: MultiplexedStreamID,
     ) -> Result<Vec<u8>, MpcNetError>;
 
     /// Everyone sends bytes to the king, who receives those bytes, runs a computation on them, and
@@ -72,9 +82,10 @@ pub trait MpcNet: Send + Sync {
     async fn king_compute(
         &mut self,
         bytes: &[u8],
+        sid: MultiplexedStreamID,
         f: impl Fn(Vec<Vec<u8>>) -> Vec<Vec<u8>> + Send,
     ) -> Result<Vec<u8>, MpcNetError> {
-        let king_response = self.send_bytes_to_king(bytes).await?.map(f);
-        self.recv_bytes_from_king(king_response).await
+        let king_response = self.send_bytes_to_king(bytes, sid).await?.map(f);
+        self.recv_bytes_from_king(king_response, sid).await
     }
 }

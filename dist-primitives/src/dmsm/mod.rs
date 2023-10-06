@@ -2,7 +2,7 @@ use crate::channel::MpcSerNet;
 use ark_ec::{CurveGroup, Group};
 use ark_poly::EvaluationDomain;
 use ark_std::{end_timer, start_timer};
-use mpc_net::MpcNetError;
+use mpc_net::{MpcNetError, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
 
 pub fn unpackexp<G: Group, Net: MpcSerNet>(
@@ -67,6 +67,7 @@ pub async fn d_msm<G: CurveGroup, Net: MpcSerNet>(
     scalars: &[G::ScalarField],
     pp: &PackedSharingParams<G::ScalarField>,
     net: &mut Net,
+    sid: MultiplexedStreamID,
 ) -> Result<G, MpcNetError> {
     // Using affine is important because we don't want to create an extra vector for converting Projective to Affine.
     // Eventually we do have to convert to Projective but this will be pp.l group elements instead of m()
@@ -81,13 +82,15 @@ pub async fn d_msm<G: CurveGroup, Net: MpcSerNet>(
     // Should be randomized. First convert to projective share.
 
     let n_parties = net.n_parties();
-    let king_answer: Option<Vec<G>> =
-        net.send_to_king(&c_share).await?.map(|shares: Vec<G>| {
+    let king_answer: Option<Vec<G>> = net
+        .send_to_king(&c_share, sid)
+        .await?
+        .map(|shares: Vec<G>| {
             let output: G = unpackexp(shares, true, pp, &net).iter().sum();
             vec![output; n_parties]
         });
 
-    net.recv_from_king(king_answer).await
+    net.recv_from_king(king_answer, sid).await
 }
 
 #[cfg(test)]

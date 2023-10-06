@@ -1,6 +1,6 @@
 use ark_ff::{FftField, PrimeField};
 use ark_std::{end_timer, start_timer};
-use mpc_net::MpcNetError;
+use mpc_net::{MpcNetError, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
 
 use crate::channel::MpcSerNet;
@@ -12,9 +12,10 @@ pub async fn deg_red<F: FftField + PrimeField, Net: MpcSerNet>(
     px: Vec<F>,
     pp: &PackedSharingParams<F>,
     net: &mut Net,
+    sid: MultiplexedStreamID,
 ) -> Result<Vec<F>, MpcNetError> {
     let communication_timer = start_timer!(|| "ComToKing");
-    let received_shares = net.send_to_king(&px).await?;
+    let received_shares = net.send_to_king(&px, sid).await?;
     end_timer!(communication_timer);
     let king_answer: Option<Vec<Vec<F>>> =
         received_shares.map(|px_shares: Vec<Vec<F>>| {
@@ -29,7 +30,7 @@ pub async fn deg_red<F: FftField + PrimeField, Net: MpcSerNet>(
         });
 
     let communication_timer = start_timer!(|| "ComFromKing");
-    let got_from_king = net.recv_from_king(king_answer).await;
+    let got_from_king = net.recv_from_king(king_answer, sid).await;
     end_timer!(communication_timer);
 
     got_from_king

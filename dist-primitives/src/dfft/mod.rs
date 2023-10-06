@@ -6,7 +6,7 @@ use ark_ff::{FftField, PrimeField};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_std::{end_timer, log2, start_timer};
 use log::debug;
-use mpc_net::MpcNetError;
+use mpc_net::{MpcNetError, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
 use std::mem;
 
@@ -22,6 +22,7 @@ pub async fn d_fft<F: FftField + PrimeField, Net: MpcSerNet>(
     dom: &Radix2EvaluationDomain<F>,
     pp: &PackedSharingParams<F>,
     net: &mut Net,
+    sid: MultiplexedStreamID,
 ) -> Result<Vec<F>, MpcNetError> {
     debug_assert_eq!(
         pcoeff_share.len() * pp.l,
@@ -34,8 +35,17 @@ pub async fn d_fft<F: FftField + PrimeField, Net: MpcSerNet>(
     // Parties apply FFT1 locally
     fft1_in_place(&mut pcoeff_share, dom, pp, &net);
     // King applies FFT2 and parties receive shares of evals
-    fft2_with_rearrange_pad(pcoeff_share, rearrange, pad, degree2, dom, pp, net)
-        .await
+    fft2_with_rearrange_pad(
+        pcoeff_share,
+        rearrange,
+        pad,
+        degree2,
+        dom,
+        pp,
+        net,
+        sid,
+    )
+    .await
 }
 
 pub async fn d_ifft<F: FftField + PrimeField, Net: MpcSerNet>(
@@ -46,6 +56,7 @@ pub async fn d_ifft<F: FftField + PrimeField, Net: MpcSerNet>(
     dom: &Radix2EvaluationDomain<F>,
     pp: &PackedSharingParams<F>,
     net: &mut Net,
+    sid: MultiplexedStreamID,
 ) -> Result<Vec<F>, MpcNetError> {
     debug_assert_eq!(
         peval_share.len() * pp.l,
@@ -61,8 +72,17 @@ pub async fn d_ifft<F: FftField + PrimeField, Net: MpcSerNet>(
     // Parties apply FFT1 locally
     fft1_in_place(&mut peval_share, dom, pp, &net);
     // King applies FFT2 and parties receive shares of evals
-    fft2_with_rearrange_pad(peval_share, rearrange, pad, degree2, dom, pp, net)
-        .await
+    fft2_with_rearrange_pad(
+        peval_share,
+        rearrange,
+        pad,
+        degree2,
+        dom,
+        pp,
+        net,
+        sid,
+    )
+    .await
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -158,6 +178,7 @@ async fn fft2_with_rearrange_pad<F: FftField + PrimeField, Net: MpcSerNet>(
     dom: &Radix2EvaluationDomain<F>,
     pp: &PackedSharingParams<F>,
     net: &mut Net,
+    sid: MultiplexedStreamID,
 ) -> Result<Vec<F>, MpcNetError> {
     // King applies FFT2 with rearrange
 
@@ -165,7 +186,7 @@ async fn fft2_with_rearrange_pad<F: FftField + PrimeField, Net: MpcSerNet>(
     println!("mbyl: {}", mbyl);
 
     let communication_timer = start_timer!(|| "ComToKing");
-    let received_shares = net.send_to_king(&px).await?;
+    let received_shares = net.send_to_king(&px, sid).await?;
     end_timer!(communication_timer);
 
     let king_answer = received_shares.map(|all_shares| {
@@ -220,7 +241,7 @@ async fn fft2_with_rearrange_pad<F: FftField + PrimeField, Net: MpcSerNet>(
     drop(px);
 
     let communication_timer = start_timer!(|| "ComFromKing");
-    let got_from_king = net.recv_from_king(king_answer).await?;
+    let got_from_king = net.recv_from_king(king_answer, sid).await?;
     end_timer!(communication_timer);
 
     Ok(got_from_king)

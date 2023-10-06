@@ -10,7 +10,7 @@ use crate::{
 };
 use ark_ff::{FftField, Field, PrimeField};
 use ark_std::{end_timer, start_timer};
-use mpc_net::MpcNetError;
+use mpc_net::{MpcNetError, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
 
 // Given pre-processed randomness [s], [s^-1]
@@ -20,6 +20,7 @@ pub async fn d_pp<F: FftField + PrimeField + Field, Net: MpcSerNet>(
     den: Vec<F>,
     pp: &PackedSharingParams<F>,
     net: &mut Net,
+    sid: MultiplexedStreamID,
 ) -> Result<Vec<F>, MpcNetError> {
     // using some dummy randomness
     let s = F::from(1_u32);
@@ -37,7 +38,7 @@ pub async fn d_pp<F: FftField + PrimeField + Field, Net: MpcSerNet>(
     // Along with degree reduction
     // King recovers secrets, computes partial products and repacks
     let communication_timer = start_timer!(|| "ComToKing");
-    let received_shares = net.send_to_king(&numden_rand).await?;
+    let received_shares = net.send_to_king(&numden_rand, sid).await?;
     end_timer!(communication_timer);
 
     let king_answer: Option<Vec<Vec<F>>> =
@@ -86,7 +87,7 @@ pub async fn d_pp<F: FftField + PrimeField + Field, Net: MpcSerNet>(
         });
 
     let communication_timer = start_timer!(|| "ComFromKing");
-    let mut pp_numden_rand = net.recv_from_king(king_answer).await?;
+    let mut pp_numden_rand = net.recv_from_king(king_answer, sid).await?;
     end_timer!(communication_timer);
 
     // Finally, remove the ranomness in the partial products
@@ -95,5 +96,5 @@ pub async fn d_pp<F: FftField + PrimeField + Field, Net: MpcSerNet>(
     let dpp_rand_timer = start_timer!(|| "DppRand");
     pp_numden_rand.iter_mut().for_each(|x| *x *= sinv);
     end_timer!(dpp_rand_timer);
-    deg_red(pp_numden_rand, pp, net).await //packed shares of partial products
+    deg_red(pp_numden_rand, pp, net, sid).await //packed shares of partial products
 }
