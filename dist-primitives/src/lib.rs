@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_arguments)]
 pub mod channel;
 pub mod dfft;
 pub mod dmsm;

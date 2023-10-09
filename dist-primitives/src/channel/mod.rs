@@ -1,40 +1,71 @@
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use async_trait::async_trait;
 
-use mpc_net::MpcNet;
+use mpc_net::{MpcNet, MpcNetError, MultiplexedStreamID};
 
+#[async_trait]
 pub trait MpcSerNet: MpcNet {
-    #[inline]
-    fn broadcast<T: CanonicalDeserialize + CanonicalSerialize>(
+    async fn broadcast<T: CanonicalDeserialize + CanonicalSerialize + Send>(
+        &mut self,
         out: &T,
-    ) -> Vec<T> {
+        sid: MultiplexedStreamID,
+    ) -> Result<Vec<T>, MpcNetError> {
         let mut bytes_out = Vec::new();
         out.serialize_compressed(&mut bytes_out).unwrap();
-        let bytes_in = Self::broadcast_bytes(&bytes_out);
-        bytes_in
+        let bytes_in = self.broadcast_bytes(&bytes_out, sid).await?;
+        let results: Vec<Result<T, MpcNetError>> = bytes_in
             .into_iter()
-            .map(|b| T::deserialize_compressed(&b[..]).unwrap())
-            .collect()
+            .map(|b| {
+                T::deserialize_compressed(&b[..])
+                    .map_err(|err| MpcNetError::Generic(err.to_string()))
+            })
+            .collect();
+
+        let mut ret = Vec::new();
+        for result in results {
+            ret.push(result?);
+        }
+
+        Ok(ret)
     }
 
-    #[inline]
-    fn send_to_king<T: CanonicalDeserialize + CanonicalSerialize>(
+    async fn send_to_king<T: CanonicalDeserialize + CanonicalSerialize>(
+        &mut self,
         out: &T,
-    ) -> Option<Vec<T>> {
+        sid: MultiplexedStreamID,
+    ) -> Result<Option<Vec<T>>, MpcNetError> {
         let mut bytes_out = Vec::new();
         out.serialize_compressed(&mut bytes_out).unwrap();
-        Self::send_bytes_to_king(&bytes_out).map(|bytes_in| {
-            bytes_in
+        let bytes_in = self.send_bytes_to_king(&bytes_out, sid).await?;
+
+        if let Some(bytes_in) = bytes_in {
+            let results: Vec<Result<T, MpcNetError>> = bytes_in
                 .into_iter()
-                .map(|b| T::deserialize_compressed(&b[..]).unwrap())
-                .collect()
-        })
+                .map(|b| {
+                    T::deserialize_compressed(&b[..])
+                        .map_err(|err| MpcNetError::Generic(err.to_string()))
+                })
+                .collect();
+
+            let mut ret = Vec::new();
+            for result in results {
+                ret.push(result?);
+            }
+
+            Ok(Some(ret))
+        } else {
+            Ok(None)
+        }
     }
 
-    #[inline]
-    fn recv_from_king<T: CanonicalDeserialize + CanonicalSerialize>(
+    async fn recv_from_king<
+        T: CanonicalDeserialize + CanonicalSerialize + Send,
+    >(
+        &mut self,
         out: Option<Vec<T>>,
-    ) -> T {
-        let bytes_in = Self::recv_bytes_from_king(out.map(|outs| {
+        sid: MultiplexedStreamID,
+    ) -> Result<T, MpcNetError> {
+        let bytes = out.map(|outs| {
             outs.iter()
                 .map(|out| {
                     let mut bytes_out = Vec::new();
@@ -42,8 +73,10 @@ pub trait MpcSerNet: MpcNet {
                     bytes_out
                 })
                 .collect()
-        }));
-        T::deserialize_compressed(&bytes_in[..]).unwrap()
+        });
+
+        let bytes_in = self.recv_bytes_from_king(bytes, sid).await?;
+        Ok(T::deserialize_compressed(&bytes_in[..])?)
     }
 }
 

@@ -8,11 +8,13 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+concurrency:
+  group: ${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
-  build:
-
+  linting:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v2
       - name: Setup Rust
@@ -33,8 +35,53 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: -- -D warnings
 
+  unit_tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+
       - name: Run tests
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all --all-features
+          args: -- --skip packed_pk_from_arkworks_pk
+
+  proving_key_unit_test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Run proving key test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --release packed_pk_from_arkworks_pk
+
+  integration_tests:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        # TODO: add dfft_test, dmsm_test
+        example: [ext_wit_bench, groth_bench, dpp_test, msm_bench, dmsm_bench, local_dfft_test]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Run ext wit bench
+        uses: actions-rs/cargo@v1
+        with:
+          command: run
+          args: --release --example ${{ matrix.example }}
+
