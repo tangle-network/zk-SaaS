@@ -22,11 +22,8 @@ jobs:
       - name: Build Artifacts
         run: cargo build --release --examples
 
-      - name: cd
-        run: cd scripts
-
       - name: DMSM Test
-        run: ./scripts/dmsm_test.zsh
+        run: cd scripts && ./dmsm_test.zsh
 
       - name: DFFT Test
         run: ./scripts/dfft_test.zsh
