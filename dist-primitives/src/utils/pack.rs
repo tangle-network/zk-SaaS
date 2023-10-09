@@ -25,10 +25,24 @@ pub fn transpose<T: Clone>(matrix: Vec<Vec<T>>) -> Vec<Vec<T>> {
 
     let mut result: Vec<Vec<T>> = vec![vec![matrix[0][0].clone(); rows]; cols];
 
-    for c in 0..cols {
-        for r in 0..rows {
-            result[c][r] = matrix[r][c].clone();
+    for (c, column) in result.iter_mut().enumerate().take(cols) {
+        for (r, row) in matrix.iter().enumerate().take(rows) {
+            column[r] = row[c].clone();
         }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_transpose() {
+        let matrix = vec![vec![1, 2, 3], vec![4, 5, 6], vec![7, 8, 9]];
+
+        let expected = vec![vec![1, 4, 7], vec![2, 5, 8], vec![3, 6, 9]];
+
+        assert_eq!(transpose(matrix), expected);
+    }
 }
