@@ -9,7 +9,10 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  integration_tests_dfft:
+  integration_tests:
+    strategy:
+      matrix:
+        script: ["dfft_test.zsh", "dmsm_test.zsh", "dpp_test.zsh", "ext_wit_test.zsh"]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -19,47 +22,8 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: DFFT Test
-        run: cd scripts && ./dfft_test.zsh
-
-  integration_tests_dmsm:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-
-      - name: DMSM Test
-        run: cd scripts && ./dmsm_test.zsh
-
-  integration_tests_dpp:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-
-      - name: DPP Test
-        run: cd scripts && ./dpp_test.zsh
-
-  integration_tests_ext_wit:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          override: true
-
-      - name: Extended Witness Test
-        run: cd scripts && ./ext_wit_test.zsh
+      - name: Test
+        run: cd scripts && ./${{ matrix.script }}
 
   build:
     runs-on: ubuntu-latest
