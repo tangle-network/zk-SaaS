@@ -1,6 +1,4 @@
 set -ex
-trap "exit" INT TERM
-trap "kill 0" EXIT
 
 # cargo build --example dmsm_test
 # BIN=../target/debug/examples/dmsm_test

@@ -1,6 +1,4 @@
 set -ex
-trap "exit" INT TERM
-trap "kill 0" EXIT
 
 cargo build --example dpp_test
 BIN=../target/debug/examples/dpp_test

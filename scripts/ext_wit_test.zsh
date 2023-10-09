@@ -1,6 +1,4 @@
 set -ex
-trap "exit" INT TERM
-trap "kill 0" EXIT
 
 cargo build --example ext_wit_bench
 BIN=../target/debug/examples/ext_wit_bench

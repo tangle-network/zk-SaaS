@@ -1,6 +1,4 @@
 set -ex
-trap "exit" INT TERM
-trap "kill 0" EXIT
 
 cargo build --example dfft_test
 BIN=../target/debug/examples/dfft_test

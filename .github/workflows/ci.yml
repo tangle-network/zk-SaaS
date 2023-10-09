@@ -27,7 +27,7 @@ jobs:
           override: true
 
       - name: Test
-        run: cd scripts && ./${{ matrix.script }}
+        run: cd scripts && ./${{ matrix.script }} && echo $?
 
   build:
     runs-on: ubuntu-latest
