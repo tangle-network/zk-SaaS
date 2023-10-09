@@ -9,7 +9,7 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  integration_tests:
+  integration_tests_dfft:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -19,20 +19,47 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: Build Artifacts
-        run: cargo build --release --examples
+      - name: DFFT Test
+        run: cd scripts && ./dfft_test.zsh
+
+  integration_tests_dmsm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
 
       - name: DMSM Test
         run: cd scripts && ./dmsm_test.zsh
 
-      - name: DFFT Test
-        run: ./scripts/dfft_test.zsh
+  integration_tests_dpp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
 
       - name: DPP Test
-        run: ./scripts/dpp_test.zsh
+        run: cd scripts && ./dpp_test.zsh
+
+  integration_tests_ext_wit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
 
       - name: Extended Witness Test
-        run: ./scripts/ext_wit_test.zsh
+        run: cd scripts && ./ext_wit_test.zsh
 
   build:
     runs-on: ubuntu-latest
