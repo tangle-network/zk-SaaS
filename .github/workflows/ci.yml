@@ -66,11 +66,12 @@ jobs:
           command: test
           args: --release packed_pk_from_arkworks_pk
 
-  integration_tests_bench:
+  integration_tests:
     runs-on: macos-latest
     strategy:
       matrix:
-        bench: [ext_wit_bench, groth_bench]
+        # TODO: add dfft_test, dmsm_test
+        example: [ext_wit_bench, groth_bench, dpp_test, msm_bench, dmsm_bench, local_dfft_test]
     steps:
       - uses: actions/checkout@v2
       - name: Setup Rust
@@ -82,5 +83,5 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: run
-          args: --release --example ${{ matrix.bench }}
+          args: --release --example ${{ matrix.example }}
 
