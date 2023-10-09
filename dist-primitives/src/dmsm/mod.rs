@@ -123,7 +123,7 @@ mod tests {
     #[tokio::test]
     async fn pack_unpack_test() {
         println!("pack_unpack_test");
-        let mut net = LocalTestNet::new_local_testnet(4).await.unwrap();
+        let net = LocalTestNet::new_local_testnet(4).await.unwrap();
 
         println!("net init done");
 
@@ -142,7 +142,7 @@ mod tests {
 
     #[tokio::test]
     async fn pack_unpack2_test() {
-        let mut net = LocalTestNet::new_local_testnet(4).await.unwrap();
+        let net = LocalTestNet::new_local_testnet(4).await.unwrap();
 
         net.simulate_network_round(|mut net| async move {
             let pp = PackedSharingParams::<F>::new(L);

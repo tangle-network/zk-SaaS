@@ -35,12 +35,6 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: -- -D warnings
 
-      - name: Run tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: -- --skip packed_pk_from_arkworks_pk
-
   unit_tests:
     runs-on: ubuntu-latest
     steps:
