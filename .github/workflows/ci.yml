@@ -67,7 +67,7 @@ jobs:
           args: packed_pk_from_arkworks_pk
 
   integration_tests_bench:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     strategy:
       matrix:
         bench: [ext_wit_bench, groth_bench]
