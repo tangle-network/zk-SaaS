@@ -8,8 +8,12 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+concurrency:
+  group: ${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
 jobs:
-  unit_tests:
+  linting:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -30,6 +34,22 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: -- -D warnings
+
+      - name: Run tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: -- --skip packed_pk_from_arkworks_pk
+
+  unit_tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
 
       - name: Run tests
         uses: actions-rs/cargo@v1
