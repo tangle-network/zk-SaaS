@@ -9,7 +9,7 @@ pub fn unpackexp<G: Group, Net: MpcSerNet>(
     mut shares: Vec<G>,
     degree2: bool,
     pp: &PackedSharingParams<G::ScalarField>,
-    net: &Net,
+    _net: &Net,
 ) -> Vec<G> {
     // interpolate shares
     pp.share.ifft_in_place(&mut shares);
@@ -18,7 +18,7 @@ pub fn unpackexp<G: Group, Net: MpcSerNet>(
 
     #[cfg(debug_assertions)]
     {
-        let n = net.n_parties();
+        let n = _net.n_parties();
         let d: usize = if degree2 {
             2 * (pp.t + pp.l)
         } else {
@@ -34,7 +34,7 @@ pub fn unpackexp<G: Group, Net: MpcSerNet>(
         }
     }
 
-    // Evalaute the polynomial on the coset to recover secrets
+    // Evaluate the polynomial on the coset to recover secrets
     if degree2 {
         pp.secret2.fft_in_place(&mut shares);
         shares[0..pp.l * 2]
@@ -127,14 +127,14 @@ mod tests {
 
         println!("net init done");
 
-        net.simulate_network_round(|net| async move {
+        net.simulate_network_round(|mut net| async move {
             let pp = PackedSharingParams::<F>::new(L);
             let rng = &mut ark_std::test_rng();
             let secrets: [G1P; L] = UniformRand::rand(rng);
             let secrets = secrets.to_vec();
 
             let shares = packexp_from_public(&secrets, &pp);
-            let result = unpackexp(shares, false, &pp, net);
+            let result = unpackexp(shares, false, &pp, &mut net);
             assert_eq!(secrets, result);
         })
         .await;
@@ -144,7 +144,7 @@ mod tests {
     async fn pack_unpack2_test() {
         let mut net = LocalTestNet::new_local_testnet(4).await.unwrap();
 
-        net.simulate_network_round(|net| async move {
+        net.simulate_network_round(|mut net| async move {
             let pp = PackedSharingParams::<F>::new(L);
             let rng = &mut ark_std::test_rng();
 
@@ -182,7 +182,8 @@ mod tests {
                 > = gshares[i].iter().map(|s| (*s).into()).collect();
                 result[i] = G1P::msm(&temp_aff, &fshares[i]).unwrap();
             }
-            let result: G1P = unpackexp(result, true, &pp, net).iter().sum();
+            let result: G1P =
+                unpackexp(result, true, &pp, &mut net).iter().sum();
             assert_eq!(expected, result);
         })
         .await;

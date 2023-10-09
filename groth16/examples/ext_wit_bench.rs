@@ -32,16 +32,14 @@ async fn groth_ext_wit<F: PrimeField, R: Rng, Net: MpcNet>(
 async fn main() {
     env_logger::builder().format_timestamp(None).init();
 
-    let mut network = Net::new_local_testnet(4).await.unwrap();
+    let network = Net::new_local_testnet(4).await.unwrap();
 
-    for i in 14..15 {
-        network
-            .simulate_network_round(|net| async move {
-                let rng = &mut ark_std::test_rng();
-                let pp = PackedSharingParams::<Fr>::new(2);
-                let cd = ConstraintDomain::<Fr>::new(1 << i);
-                groth_ext_wit(rng, &cd, &pp, net).await;
-            })
-            .await;
-    }
+    network
+        .simulate_network_round(|mut net| async move {
+            let rng = &mut ark_std::test_rng();
+            let pp = PackedSharingParams::<Fr>::new(2);
+            let cd = ConstraintDomain::<Fr>::new(1 << 14);
+            groth_ext_wit(rng, &cd, &pp, &mut net).await;
+        })
+        .await;
 }

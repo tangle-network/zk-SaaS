@@ -413,19 +413,20 @@ impl LocalTestNet {
     // For each node, run a function (a Future) provided by the parameter that accepts the node's Connection.
     // Then, run all these futures in a FuturesOrdered.
     pub async fn simulate_network_round<
-        'a,
-        'b: 'a,
         F: Future<Output = K> + Send,
-        K: Send + Sync + 'b,
+        K: Send + Sync + 'static,
     >(
-        &'a mut self,
-        f: impl Fn(&'a mut Connections) -> F + Send + Sync + Clone,
+        self,
+        f: impl Fn(Connections) -> F + Send + Sync + Clone + 'static,
     ) -> Vec<K> {
         let mut futures = FuturesOrdered::new();
-        for (_, connections) in self.nodes.iter_mut() {
+        for (_, connections) in self.nodes.into_iter() {
             let next_f = f.clone();
-            futures
-                .push_back(Box::pin(async move { next_f(connections).await }));
+            futures.push_back(Box::pin(async move {
+                let task = async move { next_f(connections).await };
+                let handle = tokio::task::spawn(task);
+                handle.await.unwrap()
+            }));
         }
         futures.collect().await
     }

@@ -79,9 +79,9 @@ pub async fn d_fft_test<F: FftField + PrimeField, Net: MpcNet>(
 pub async fn main() {
     env_logger::builder().format_timestamp(None).init();
 
-    let mut network = Net::new_local_testnet(4).await.unwrap();
+    let network = Net::new_local_testnet(4).await.unwrap();
     network
-        .simulate_network_round(|net| async move {
+        .simulate_network_round(|mut net| async move {
             let pp = PackedSharingParams::<Fr>::new(2);
             let dom = Radix2EvaluationDomain::<Fr>::new(8).unwrap();
             /*debug_assert_eq!(
@@ -90,7 +90,7 @@ pub async fn main() {
                 "Failed to obtain domain of size {}",
                 opt.m
             );*/
-            d_fft_test::<ark_bls12_377::Fr, _>(&pp, &dom, net).await;
+            d_fft_test::<ark_bls12_377::Fr, _>(&pp, &dom, &mut net).await;
         })
         .await;
 }

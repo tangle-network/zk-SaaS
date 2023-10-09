@@ -60,12 +60,12 @@ pub async fn d_pp_test<F: FftField + PrimeField, Net: MpcNet>(
 async fn main() {
     env_logger::builder().format_timestamp(None).init();
 
-    let mut network = Net::new_local_testnet(4).await.unwrap();
+    let network = Net::new_local_testnet(4).await.unwrap();
     network
-        .simulate_network_round(|net| async move {
+        .simulate_network_round(|mut net| async move {
             let pp = PackedSharingParams::<Fr>::new(2);
             let cd = Radix2EvaluationDomain::<Fr>::new(1 << 15).unwrap();
-            d_pp_test::<ark_bls12_377::Fr, _>(&pp, &cd, net).await;
+            d_pp_test::<Fr, _>(&pp, &cd, &mut net).await;
         })
         .await;
 }

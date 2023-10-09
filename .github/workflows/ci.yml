@@ -9,10 +9,8 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
+  unit_tests:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v2
       - name: Setup Rust
@@ -37,4 +35,38 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --all --all-features
+          args: -- --skip packed_pk_from_arkworks_pk
+
+  proving_key_unit_test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Run proving key test
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: packed_pk_from_arkworks_pk
+
+  integration_tests_bench:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        bench: [ext_wit_bench, groth_bench]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Run ext wit bench
+        uses: actions-rs/cargo@v1
+        with:
+          command: run
+          args: --release --example ${{ matrix.bench }}
+

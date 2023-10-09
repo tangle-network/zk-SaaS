@@ -15,7 +15,12 @@ pub async fn d_msm_test<G: CurveGroup, Net: MpcNet>(
     // let m = pp.l*4;
     // let case_timer = start_timer!(||"affinemsm_test");
     let mbyl: usize = dom.size() / pp.l;
-    println!("m: {}, mbyl: {}", dom.size(), mbyl);
+    println!(
+        "m: {}, mbyl: {}, party_id: {}",
+        dom.size(),
+        mbyl,
+        net.party_id()
+    );
 
     let rng = &mut ark_std::test_rng();
 
@@ -68,13 +73,14 @@ pub async fn d_msm_test<G: CurveGroup, Net: MpcNet>(
 async fn main() {
     env_logger::builder().format_timestamp(None).init();
 
-    let mut network = Net::new_local_testnet(4).await.unwrap();
+    let network = Net::new_local_testnet(8).await.unwrap();
 
     network
-        .simulate_network_round(|net| async move {
+        .simulate_network_round(|mut net| async move {
             let pp = PackedSharingParams::<Fr>::new(2);
             let dom = Radix2EvaluationDomain::<Fr>::new(32768).unwrap();
-            d_msm_test::<ark_bls12_377::G1Projective, _>(&pp, &dom, net).await;
+            d_msm_test::<ark_bls12_377::G1Projective, _>(&pp, &dom, &mut net)
+                .await;
         })
         .await;
 }

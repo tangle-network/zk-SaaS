@@ -104,13 +104,13 @@ async fn dgroth<E: Pairing, Net: MpcNet>(
 async fn main() {
     env_logger::builder().format_timestamp(None).init();
 
-    let mut network = Net::new_local_testnet(4).await.unwrap();
+    let network = Net::new_local_testnet(8).await.unwrap();
 
     network
-        .simulate_network_round(|net| async move {
+        .simulate_network_round(|mut net| async move {
             let pp = PackedSharingParams::<BlsFr>::new(2);
             let cd = ConstraintDomain::<BlsFr>::new(32768);
-            dgroth::<BlsE, _>(&pp, &cd, net).await;
+            dgroth::<BlsE, _>(&pp, &cd, &mut net).await;
         })
         .await;
 }
