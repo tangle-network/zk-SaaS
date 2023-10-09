@@ -64,7 +64,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: packed_pk_from_arkworks_pk
+          args: --release packed_pk_from_arkworks_pk
 
   integration_tests_bench:
     runs-on: macos-latest

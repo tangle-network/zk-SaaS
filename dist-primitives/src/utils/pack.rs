@@ -18,17 +18,17 @@ pub fn pack_vec<F: FftField>(
     end_timer!(pack_shares_timer);
     shares
 }
+pub fn transpose<T: Clone>(matrix: Vec<Vec<T>>) -> Vec<Vec<T>> {
+    assert!(!matrix.is_empty());
+    let cols = matrix[0].len();
+    let rows = matrix.len();
 
-pub fn transpose<T>(v: Vec<Vec<T>>) -> Vec<Vec<T>> {
-    assert!(!v.is_empty());
-    let len = v[0].len();
-    let mut iters: Vec<_> = v.into_iter().map(|n| n.into_iter()).collect();
-    (0..len)
-        .map(|_| {
-            iters
-                .iter_mut()
-                .map(|n| n.next().unwrap())
-                .collect::<Vec<T>>()
-        })
-        .collect()
+    let mut result: Vec<Vec<T>> = vec![vec![matrix[0][0].clone(); rows]; cols];
+
+    for c in 0..cols {
+        for r in 0..rows {
+            result[c][r] = matrix[r][c].clone();
+        }
+    }
+    result
 }
