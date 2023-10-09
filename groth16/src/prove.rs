@@ -1,19 +1,26 @@
-#![allow(non_snake_case)]
+#![allow(non_snake_case, clippy::too_many_arguments)]
 
 use ark_ec::{pairing::Pairing, CurveGroup};
 use ark_ff::{FftField, PrimeField};
 use dist_primitives::dmsm::d_msm;
+use mpc_net::{MpcNet, MpcNetError, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
 
 /// A = L.(N)^r.∏{i∈[0,m]}(S_i)^a_i
-pub fn compute_A<E: Pairing<G1Affine = F>, F: FftField + PrimeField>(
+pub async fn compute_A<
+    E: Pairing<G1Affine = F>,
+    F: FftField + PrimeField,
+    Net: MpcNet,
+>(
     L: E::G1,
     N: E::G1,
     r: F,
     s_pp: PackedSharingParams<E::ScalarField>,
     S: Vec<E::G1Affine>,
     a: Vec<E::ScalarField>,
-) -> E::G1Affine {
+    net: &mut Net,
+    sid: MultiplexedStreamID,
+) -> Result<E::G1Affine, MpcNetError> {
     // We use variables (L, N, (S_i){i∈[0,m]}) to denote elements in G1
     // We also assume that all the servers computing the proof
     // get L, N in the clear and only receive packed shares of the remaining elements
@@ -30,20 +37,26 @@ pub fn compute_A<E: Pairing<G1Affine = F>, F: FftField + PrimeField>(
 
     // Calculate ∏{i∈[0,m]}(S_i)^a_i using dmsm
 
-    let prod = d_msm::<E::G1>(&S, &a, &s_pp);
+    let prod = d_msm::<E::G1, _>(&S, &a, &s_pp, net, sid).await?;
 
-    prod.into_affine().mul(v1)
+    Ok(prod.into_affine().mul(v1))
 }
 
 /// B = Z.(K)^s.∏{i∈[0,m]}(V_i)^a_i
-pub fn compute_B<E: Pairing<G2Affine = F>, F: FftField + PrimeField>(
+pub async fn compute_B<
+    E: Pairing<G2Affine = F>,
+    F: FftField + PrimeField,
+    Net: MpcNet,
+>(
     Z: E::G2,
     K: E::G2,
     s: F,
     v_pp: PackedSharingParams<E::ScalarField>,
     V: Vec<E::G2Affine>,
     a: Vec<E::ScalarField>,
-) -> E::G2Affine {
+    net: &mut Net,
+    sid: MultiplexedStreamID,
+) -> Result<E::G2Affine, MpcNetError> {
     // We use variables (Z, K, (V_i){i∈[0,m]}) to denote elements in G2
     // We also assume that all the servers computing the proof
     // get Z, K in the clear and only receive packed shares of the remaining elements
@@ -58,6 +71,6 @@ pub fn compute_B<E: Pairing<G2Affine = F>, F: FftField + PrimeField>(
     // Calculate Z.(K)^s
     let v1 = Z.into_affine().mul(v0);
     // Calculate ∏{i∈[0,m]}(V_i)^a_i using dmsm
-    let prod = d_msm::<E::G2>(&V, &a, &v_pp);
-    prod.into_affine().mul(v1)
+    let prod = d_msm::<E::G2, _>(&V, &a, &v_pp, net, sid).await?;
+    Ok(prod.into_affine().mul(v1))
 }
