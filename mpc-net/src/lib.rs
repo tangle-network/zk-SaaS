@@ -1,4 +1,5 @@
 pub mod multi;
+pub mod prod;
 
 use async_trait::async_trait;
 use auto_impl::auto_impl;
@@ -18,6 +19,7 @@ pub struct Stats {
 pub enum MpcNetError {
     Generic(String),
     Protocol { err: String, party: u32 },
+    NotConnected,
 }
 
 impl<T: ToString> From<T> for MpcNetError {

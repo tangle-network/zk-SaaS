@@ -18,6 +18,8 @@ auto_impl = "1.1.0"
 parking_lot = "0.12.1"
 tokio-util = { version = "0.7.9", features = ["codec"] }
 async_smux = "0.3.0"
+serde = "1.0.188"
+bincode2 = "2.0.1"
 
 [dev-dependencies]
 structopt = { version = "0.3" }
