@@ -15,8 +15,7 @@ pub async fn compute_A<
     L: E::G1,
     N: E::G1,
     r: F,
-    s_pp: PackedSharingParams<E::ScalarField>,
-    S: Vec<E::G1Affine>,
+    (s_pp, S): (PackedSharingParams<E::ScalarField>, Vec<E::G1Affine>),
     a: Vec<E::ScalarField>,
     net: &mut Net,
     sid: MultiplexedStreamID,
@@ -51,8 +50,7 @@ pub async fn compute_B<
     Z: E::G2,
     K: E::G2,
     s: F,
-    v_pp: PackedSharingParams<E::ScalarField>,
-    V: Vec<E::G2Affine>,
+    (v_pp, V): (PackedSharingParams<E::ScalarField>, Vec<E::G2Affine>),
     a: Vec<E::ScalarField>,
     net: &mut Net,
     sid: MultiplexedStreamID,
@@ -73,4 +71,44 @@ pub async fn compute_B<
     // Calculate ∏{i∈[0,m]}(V_i)^a_i using dmsm
     let prod = d_msm::<E::G2, _>(&V, &a, &v_pp, net, sid).await?;
     Ok(prod.into_affine().mul(v1))
+}
+
+/// C = (∏{i∈[l+1,m]}(W_i)^a_i)(∏{i∈[0,Q−2]}(U_i)^h_i).A^s.M^r.(∏{i∈[0,m]}(H_i)^a_i)^r
+pub async fn compute_C<
+    E: Pairing<G1Affine = F>,
+    F: FftField + PrimeField,
+    Net: MpcNet,
+>(
+    A: E::G1Affine,
+    M: E::G1,
+    s: F,
+    r: F,
+    (w_pp, W): (PackedSharingParams<E::ScalarField>, Vec<E::G1Affine>),
+    (u_pp, U): (PackedSharingParams<E::ScalarField>, Vec<E::G1Affine>),
+    (h_pp, H): (PackedSharingParams<E::ScalarField>, Vec<E::G1Affine>),
+    a: Vec<E::ScalarField>,
+    h: Vec<E::ScalarField>,
+    net: &mut Net,
+    sid: MultiplexedStreamID,
+) -> Result<E::G1Affine, MpcNetError> {
+    // We use variables (A, M, ∏{i∈[l+1,m]}(W_i)^a_i, ∏{i∈[0,Q−2]}(U_i)h_i, ∏{i∈[0,m]}(H_i)^a_i)
+    // to denote elements in G1. We also assume that all the servers computing the proof
+    // get A, M, s, r and h in the clear and only receive packed shares of the remaining elements.
+
+    // Calculate ∏{i∈[l+1,m]}(W_i)^a_i using dmsm
+    let w = d_msm::<E::G1, _>(&W, &a, &w_pp, net, sid).await?;
+    // Calculate ∏{i∈[0,Q−2]}(U_i)^h_i using dmsm
+    let u = d_msm::<E::G1, _>(&U, &h, &u_pp, net, sid).await?;
+    // Calculate ∏{i∈[0,m]}(H_i)^a_i using dmsm
+    let h = d_msm::<E::G1, _>(&H, &a, &h_pp, net, sid).await?;
+
+    // Calculate A^s
+    let v0 = A.pow(s.into_bigint());
+    // Calculate M^r
+    let v1 = M.into_affine().pow(r.into_bigint());
+    // Calculate (∏{i∈[0,m]}(H_i)^a_i)^r
+    let v2 = h.into_affine().pow(r.into_bigint());
+    // finally compute C
+    let c = w.into_affine().mul(u.into_affine()).mul(v0).mul(v1).mul(v2);
+    Ok(c)
 }
