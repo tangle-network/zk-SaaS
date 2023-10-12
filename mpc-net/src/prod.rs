@@ -296,7 +296,7 @@ mod test {
     use futures::{TryFutureExt, TryStreamExt};
     use tokio::net::TcpListener;
 
-    use rcgen::{Certificate, CertificateParams, RcgenError};
+    use rcgen::{Certificate, RcgenError};
 
     impl CertToDer for Certificate {
         fn serialize_certificate_to_der(&self) -> Result<Vec<u8>, MpcNetError> {
