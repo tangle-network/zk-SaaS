@@ -6,17 +6,81 @@ use crate::{MpcNet, MpcNetError, MultiplexedStreamID, Stats};
 use async_trait::async_trait;
 use futures::SinkExt;
 use futures::StreamExt;
+use rustls::server::AllowAnyAuthenticatedClient;
+use rustls::{RootCertStore, ServerConfig};
 use serde::{Deserialize, Serialize};
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::TcpStream;
+use tokio::net::{TcpStream, ToSocketAddrs};
+use tokio_rustls::{TlsAcceptor, TlsStream};
 use tokio_util::bytes::Bytes;
+
+pub trait CertToDer {
+    fn serialize_certificate_to_der(&self) -> Result<Vec<u8>, MpcNetError>;
+    fn serialize_private_key_to_der(&self) -> Result<Vec<u8>, MpcNetError>;
+}
+
+#[derive(Clone)]
+pub struct RustlsCertificate {
+    cert: rustls::Certificate,
+    private_key: rustls::PrivateKey,
+}
+
+impl CertToDer for RustlsCertificate {
+    fn serialize_certificate_to_der(&self) -> Result<Vec<u8>, MpcNetError> {
+        Ok(self.cert.0.clone())
+    }
+
+    fn serialize_private_key_to_der(&self) -> Result<Vec<u8>, MpcNetError> {
+        Ok(self.private_key.0.clone())
+    }
+}
+
+pub fn create_server_mutual_tls_acceptor<T: CertToDer>(
+    client_certs: RootCertStore,
+    server_certificate: T,
+) -> Result<TlsAcceptor, MpcNetError> {
+    let client_auth = AllowAnyAuthenticatedClient::new(client_certs);
+    let server_config = ServerConfig::builder()
+        .with_safe_defaults()
+        .with_client_cert_verifier(Arc::new(client_auth))
+        .with_single_cert(
+            vec![rustls::Certificate(
+                server_certificate.serialize_certificate_to_der()?,
+            )],
+            rustls::PrivateKey(
+                server_certificate.serialize_private_key_to_der()?,
+            ),
+        )
+        .unwrap();
+    Ok(TlsAcceptor::from(Arc::new(server_config)))
+}
+
+pub fn create_client_mutual_tls_connector<T: CertToDer>(
+    server_certs: RootCertStore,
+    client_certificate: T,
+) -> Result<tokio_rustls::TlsConnector, MpcNetError> {
+    let client_config = rustls::ClientConfig::builder()
+        .with_safe_defaults()
+        .with_root_certificates(server_certs)
+        .with_client_auth_cert(
+            vec![rustls::Certificate(
+                client_certificate.serialize_certificate_to_der()?,
+            )],
+            rustls::PrivateKey(
+                client_certificate.serialize_private_key_to_der()?,
+            ),
+        )
+        .unwrap();
+    Ok(tokio_rustls::TlsConnector::from(Arc::new(client_config)))
+}
 
 pub struct ProdNet {
     /// The king will have a connection to each party, and each party will have a connection to the king.
     /// Thus, if this node is a king, there will be n_parties connections below. If this node is not a king,
     /// then, where will be only a single connection to the thing with ID 0
-    connections: MpcNetConnection,
+    connections: MpcNetConnection<TlsStream<TcpStream>>,
 }
 
 #[derive(Serialize, Deserialize, Eq, PartialEq)]
@@ -28,11 +92,15 @@ pub enum ProtocolPacket {
 
 impl ProdNet {
     /// Returns when all the parties have connected.
-    pub async fn new_king<T: ToSocketAddrs>(
-        bind_addr: SocketAddr,
-        n_peers: usize,
+    pub async fn new_king<T: ToSocketAddrs, R: CertToDer>(
+        bind_addr: T,
+        identity: R,
+        client_certs: RootCertStore,
     ) -> Result<Self, MpcNetError> {
         let tcp_listener = tokio::net::TcpListener::bind(bind_addr).await?;
+        let n_peers = client_certs.len();
+        let tls_acceptor =
+            create_server_mutual_tls_acceptor(client_certs, identity)?;
 
         let mut connections = MpcNetConnection {
             id: 0,
@@ -42,8 +110,10 @@ impl ProdNet {
         };
 
         for _ in 0..n_peers {
-            let (mut stream, _) = tcp_listener.accept().await?;
+            let (stream, _) = tcp_listener.accept().await?;
             let peer_addr = stream.peer_addr()?;
+            let mut stream =
+                TlsStream::Server(tls_acceptor.accept(stream).await?);
             let peer_id = stream.read_u32().await?;
             // Now, multiplex the stream
             let muxed =
@@ -84,11 +154,20 @@ impl ProdNet {
         Ok(Self { connections })
     }
 
-    pub async fn new_peer(
+    pub async fn new_peer<R: CertToDer>(
         id: u32,
         king: SocketAddr,
+        identity: R,
+        server_cert: RootCertStore,
     ) -> Result<Self, MpcNetError> {
-        let mut stream = TcpStream::connect(king).await?;
+        let stream = TcpStream::connect(king).await?;
+        let tls_connector =
+            create_client_mutual_tls_connector(server_cert, identity)?;
+        let mut stream = TlsStream::Client(
+            tls_connector
+                .connect(rustls::ServerName::IpAddress(king.ip()), stream)
+                .await?,
+        );
         stream.write_u32(id).await?;
         let muxed =
             multiplex_stream(MULTIPLEXED_STREAMS, false, stream).await?;
@@ -184,7 +263,7 @@ impl MpcNet for ProdNet {
 }
 
 async fn send_packet(
-    streams: Option<&mut Vec<WrappedMuxStream<TcpStream>>>,
+    streams: Option<&mut Vec<WrappedMuxStream<TlsStream<TcpStream>>>>,
     sid: MultiplexedStreamID,
     packet: ProtocolPacket,
 ) -> Result<(), MpcNetError> {
@@ -198,7 +277,7 @@ async fn send_packet(
 }
 
 async fn recv_packet(
-    streams: Option<&mut Vec<WrappedMuxStream<TcpStream>>>,
+    streams: Option<&mut Vec<WrappedMuxStream<TlsStream<TcpStream>>>>,
     sid: MultiplexedStreamID,
 ) -> Result<ProtocolPacket, MpcNetError> {
     let stream = streams.ok_or(MpcNetError::NotConnected)?;
@@ -208,4 +287,87 @@ async fn recv_packet(
     let packet = stream.next().await.ok_or(MpcNetError::NotConnected)??;
     let packet = bincode2::deserialize(&packet)?;
     Ok(packet)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use futures::stream::FuturesUnordered;
+    use futures::{TryFutureExt, TryStreamExt};
+    use tokio::net::TcpListener;
+
+    use rcgen::{Certificate, CertificateParams, RcgenError};
+
+    impl CertToDer for Certificate {
+        fn serialize_certificate_to_der(&self) -> Result<Vec<u8>, MpcNetError> {
+            Ok(self.serialize_der().unwrap())
+        }
+        fn serialize_private_key_to_der(&self) -> Result<Vec<u8>, MpcNetError> {
+            Ok(self.serialize_private_key_der())
+        }
+    }
+
+    fn generate_self_signed_cert() -> Result<Certificate, RcgenError> {
+        let params = CertificateParams::new(vec!["localhost".to_string()]);
+        let cert = Certificate::from_params(params)?;
+        Ok(cert)
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_network_init() {
+        const N_PEERS: usize = 4;
+        let king_addr = TcpListener::bind("127.0.0.1:0")
+            .await
+            .unwrap()
+            .local_addr()
+            .unwrap();
+        let server_identity = generate_self_signed_cert().unwrap();
+        let server_identity = RustlsCertificate {
+            cert: rustls::Certificate(server_identity.serialize_der().unwrap()),
+            private_key: rustls::PrivateKey(
+                server_identity.serialize_private_key_der(),
+            ),
+        };
+
+        let mut server_cert = RootCertStore::empty();
+        server_cert.add(&server_identity.cert).unwrap();
+
+        let mut client_certs = RootCertStore::empty();
+        let mut client_identities = Vec::new();
+        for _ in 0..N_PEERS {
+            let peer_identity = generate_self_signed_cert().unwrap();
+            let peer_identity = RustlsCertificate {
+                cert: rustls::Certificate(
+                    peer_identity.serialize_der().unwrap(),
+                ),
+                private_key: rustls::PrivateKey(
+                    peer_identity.serialize_private_key_der(),
+                ),
+            };
+            client_certs.add(&peer_identity.cert).unwrap();
+            client_identities.push(peer_identity);
+        }
+
+        let king = tokio::spawn(ProdNet::new_king(
+            king_addr,
+            server_identity.clone(),
+            client_certs.clone(),
+        ))
+        .map_err(|err| MpcNetError::Generic(err.to_string()));
+        let peers = FuturesUnordered::new();
+        for (i, identity) in client_identities.into_iter().enumerate() {
+            let peer = ProdNet::new_peer(
+                i as u32,
+                king_addr,
+                identity,
+                server_cert.clone(),
+            );
+            peers.push(Box::pin(peer));
+        }
+
+        let peers = peers.try_collect::<Vec<_>>();
+
+        let (r_server, _) = tokio::try_join!(king, peers).unwrap();
+        r_server.unwrap();
+    }
 }

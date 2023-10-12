@@ -30,13 +30,13 @@ fn wrap_stream<T: AsyncRead + AsyncWrite>(
         .new_framed(stream)
 }
 
-pub struct Peer {
+pub struct Peer<IO: AsyncRead + AsyncWrite + Unpin> {
     pub id: u32,
     pub listen_addr: SocketAddr,
-    pub streams: Option<Vec<WrappedMuxStream<TcpStream>>>,
+    pub streams: Option<Vec<WrappedMuxStream<IO>>>,
 }
 
-impl Debug for Peer {
+impl<IO: AsyncRead + AsyncWrite + Unpin> Debug for Peer<IO> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut f = f.debug_struct("Peer");
         f.field("id", &self.id);
@@ -46,7 +46,7 @@ impl Debug for Peer {
     }
 }
 
-impl Clone for Peer {
+impl<IO: AsyncRead + AsyncWrite + Unpin> Clone for Peer<IO> {
     fn clone(&self) -> Self {
         Self {
             id: self.id,
@@ -97,14 +97,14 @@ pub async fn multiplex_stream<
 }
 
 #[derive(Default, Debug)]
-pub struct MpcNetConnection {
+pub struct MpcNetConnection<IO: AsyncRead + AsyncWrite + Unpin> {
     pub id: u32,
     pub listener: Option<TcpListener>,
-    pub peers: HashMap<u32, Peer>,
+    pub peers: HashMap<u32, Peer<IO>>,
     pub stats: Stats,
 }
 
-impl MpcNetConnection {
+impl MpcNetConnection<TcpStream> {
     async fn connect_to_all(&mut self) -> Result<(), MpcNetError> {
         let timer = start_timer!(|| "Connecting");
         let n_minus_1 = self.n_parties() - 1;
@@ -218,7 +218,9 @@ impl MpcNetConnection {
         end_timer!(timer);
         Ok(())
     }
+}
 
+impl<IO: AsyncRead + AsyncWrite + Unpin> MpcNetConnection<IO> {
     fn am_king(&self) -> bool {
         self.id == 0
     }
@@ -354,7 +356,7 @@ impl MpcNetConnection {
 }
 
 pub struct LocalTestNet {
-    nodes: HashMap<usize, MpcNetConnection>,
+    nodes: HashMap<usize, MpcNetConnection<TcpStream>>,
 }
 
 impl LocalTestNet {
@@ -417,7 +419,7 @@ impl LocalTestNet {
         K: Send + Sync + 'static,
     >(
         self,
-        f: impl Fn(MpcNetConnection) -> F + Send + Sync + Clone + 'static,
+        f: impl Fn(MpcNetConnection<TcpStream>) -> F + Send + Sync + Clone + 'static,
     ) -> Vec<K> {
         let mut futures = FuturesOrdered::new();
         for (_, connections) in self.nodes.into_iter() {
@@ -433,7 +435,9 @@ impl LocalTestNet {
 }
 
 #[async_trait]
-impl MpcNet for MpcNetConnection {
+impl<IO: AsyncRead + AsyncWrite + Unpin + Send> MpcNet
+    for MpcNetConnection<IO>
+{
     fn n_parties(&self) -> usize {
         self.peers.len()
     }
