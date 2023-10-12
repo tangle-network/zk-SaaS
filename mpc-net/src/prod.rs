@@ -308,9 +308,7 @@ mod test {
     }
 
     fn generate_self_signed_cert() -> Result<Certificate, RcgenError> {
-        let params = CertificateParams::new(vec!["localhost".to_string()]);
-        let cert = Certificate::from_params(params)?;
-        Ok(cert)
+        rcgen::generate_simple_self_signed(vec!["127.0.0.1".to_string()])
     }
 
     #[tokio::test(flavor = "multi_thread")]
