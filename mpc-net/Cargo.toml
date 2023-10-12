@@ -20,6 +20,9 @@ tokio-util = { version = "0.7.9", features = ["codec"] }
 async_smux = "0.3.0"
 serde = "1.0.188"
 bincode2 = "2.0.1"
+rcgen = "0.11.3"
+rustls = "0.21.7"
+tokio-rustls = "0.24.1"
 
 [dev-dependencies]
 structopt = { version = "0.3" }
