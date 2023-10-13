@@ -8,7 +8,6 @@ use dist_primitives::dmsm::packexp_from_public;
 use secret_sharing::pss::PackedSharingParams;
 
 use ark_ff::UniformRand;
-use ark_std::{end_timer, start_timer};
 use rand::Rng;
 
 #[cfg(feature = "parallel")]
@@ -112,48 +111,36 @@ where
         domain_size: usize,
         pp: &PackedSharingParams<E::ScalarField>,
     ) -> Self {
-        let outer_time = start_timer!(|| "Dummy CRS packing");
-        let inner_time = start_timer!(|| "Packing S");
         // println!("a_query:{}", pk.a_query.len());
         let mut s_shares: Vec<E::G1Affine> =
             vec![E::G1Affine::rand(rng); domain_size / pp.l];
         for i in 1..s_shares.len() {
             s_shares[i] = E::G1Affine::rand(rng);
         }
-        end_timer!(inner_time);
 
-        let inner_time = start_timer!(|| "Packing U");
         // println!("h_query:{}", pk.h_query.len());
         let mut u_shares = vec![E::G1Affine::rand(rng); domain_size * 2 / pp.l];
         for i in 1..u_shares.len() {
             u_shares[i] = E::G1Affine::rand(rng);
         }
-        end_timer!(inner_time);
 
-        let inner_time = start_timer!(|| "Packing W");
         // println!("l_query:{}", pk.l_query.len());
         let mut w_shares = vec![E::G1Affine::rand(rng); domain_size / pp.l];
         for i in 1..w_shares.len() {
             w_shares[i] = E::G1Affine::rand(rng);
         }
-        end_timer!(inner_time);
 
-        let inner_time = start_timer!(|| "Packing H");
         // println!("b_g1_query:{}", pk.b_g1_query.len());
         let mut h_shares = vec![E::G1Affine::rand(rng); domain_size / pp.l];
         for i in 1..h_shares.len() {
             h_shares[i] = E::G1Affine::rand(rng);
         }
-        end_timer!(inner_time);
 
-        let inner_time = start_timer!(|| "Packing V");
         // println!("b_g2_query:{}", pk.b_g2_query.len());
         let mut v_shares = vec![E::G2Affine::rand(rng); domain_size / pp.l];
         for i in 1..v_shares.len() {
             v_shares[i] = E::G2Affine::rand(rng);
         }
-        end_timer!(inner_time);
-        end_timer!(outer_time);
 
         PackedProvingKeyShare::<E> {
             s: s_shares,

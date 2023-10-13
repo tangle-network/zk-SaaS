@@ -6,7 +6,7 @@ use mpc_net::{MpcNet, MpcNetError, MultiplexedStreamID};
 #[async_trait]
 pub trait MpcSerNet: MpcNet {
     async fn broadcast<T: CanonicalDeserialize + CanonicalSerialize + Send>(
-        &mut self,
+        &self,
         out: &T,
         sid: MultiplexedStreamID,
     ) -> Result<Vec<T>, MpcNetError> {
@@ -30,7 +30,7 @@ pub trait MpcSerNet: MpcNet {
     }
 
     async fn send_to_king<T: CanonicalDeserialize + CanonicalSerialize>(
-        &mut self,
+        &self,
         out: &T,
         sid: MultiplexedStreamID,
     ) -> Result<Option<Vec<T>>, MpcNetError> {
@@ -61,7 +61,7 @@ pub trait MpcSerNet: MpcNet {
     async fn recv_from_king<
         T: CanonicalDeserialize + CanonicalSerialize + Send,
     >(
-        &mut self,
+        &self,
         out: Option<Vec<T>>,
         sid: MultiplexedStreamID,
     ) -> Result<T, MpcNetError> {

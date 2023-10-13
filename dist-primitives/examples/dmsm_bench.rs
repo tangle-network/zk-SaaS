@@ -1,7 +1,7 @@
 use ark_bls12_377::Fr;
 use ark_ec::CurveGroup;
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
-use ark_std::{end_timer, start_timer, UniformRand, Zero};
+use ark_std::{UniformRand, Zero};
 use dist_primitives::dmsm::d_msm;
 use mpc_net::{LocalTestNet as Net, MpcNet, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
@@ -9,10 +9,9 @@ use secret_sharing::pss::PackedSharingParams;
 pub async fn d_msm_test<G: CurveGroup, Net: MpcNet>(
     pp: &PackedSharingParams<G::ScalarField>,
     dom: &Radix2EvaluationDomain<G::ScalarField>,
-    net: &mut Net,
+    net: &Net,
 ) {
     // let m = pp.l*4;
-    // let case_timer = start_timer!(||"affinemsm_test");
     let mbyl: usize = dom.size() / pp.l;
     println!("m: {}, mbyl: {}", dom.size(), mbyl);
 
@@ -30,11 +29,9 @@ pub async fn d_msm_test<G: CurveGroup, Net: MpcNet>(
     let x_share_aff: Vec<G::Affine> =
         x_share.iter().map(|s| (*s).into()).collect();
 
-    let dmsm = start_timer!(|| "Distributed msm");
     d_msm::<G, _>(&x_share_aff, &y_share, pp, net, MultiplexedStreamID::One)
         .await
         .unwrap();
-    end_timer!(dmsm);
 }
 
 #[tokio::main]

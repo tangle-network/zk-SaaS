@@ -1,7 +1,7 @@
 use ark_ec::{bls12::Bls12, pairing::Pairing, VariableBaseMSM};
 use ark_ff::UniformRand;
 use ark_poly::EvaluationDomain;
-use ark_std::{end_timer, start_timer, One, Zero};
+use ark_std::{One, Zero};
 use groth16::ConstraintDomain;
 use log::debug;
 use rand::Rng;
@@ -22,8 +22,6 @@ fn local_dummy_crs<E: Pairing, R: Rng>(
     domain_size: usize,
     rng: &mut R,
 ) -> ProvingKey<E> {
-    let outer_time = start_timer!(|| "Dummy CRS packing");
-
     let mut s: Vec<<E as Pairing>::G1Affine> =
         vec![E::G1Affine::rand(rng); domain_size];
     for i in 1..s.len() {
@@ -49,8 +47,6 @@ fn local_dummy_crs<E: Pairing, R: Rng>(
     for i in 1..v.len() {
         v[i] = (v[i - 1] + v[i - 1]).into();
     }
-
-    end_timer!(outer_time);
 
     ProvingKey::<E> { s, u, v, w, h }
 }
@@ -93,8 +89,6 @@ fn localgroth_test<E: Pairing>(cd: &ConstraintDomain<E::ScalarField>) {
     let mut q_eval: Vec<E::ScalarField> = p_eval.clone();
     let mut w_eval: Vec<E::ScalarField> = p_eval.clone();
 
-    let fft_section = start_timer!(|| "Field operations");
-
     /////////IFFT
     cd.constraint.ifft_in_place(&mut p_eval);
     cd.constraint.ifft_in_place(&mut q_eval);
@@ -124,7 +118,6 @@ fn localgroth_test<E: Pairing>(cd: &ConstraintDomain<E::ScalarField>) {
 
     ///////////IFFT
     cd.constraint2.ifft_in_place(&mut h_eval);
-    end_timer!(fft_section);
 
     let rng = &mut ark_std::test_rng();
     let crs: ProvingKey<E> = local_dummy_crs(cd.m, rng);
@@ -142,7 +135,6 @@ fn localgroth_test<E: Pairing>(cd: &ConstraintDomain<E::ScalarField>) {
         h_eval.len()
     );
 
-    let msm_section = start_timer!(|| "MSM operations");
     // Compute msm while dropping the base vectors as they are not used again
     let _pi_a_share = E::G1::msm(&crs.s, &a_share).unwrap();
     println!("s done");
@@ -155,8 +147,6 @@ fn localgroth_test<E: Pairing>(cd: &ConstraintDomain<E::ScalarField>) {
     let _pi_c_share3 = E::G1::msm(&crs.u, &h_eval).unwrap();
     println!("u done");
     let _pi_c_share = _pi_c_share1 + _pi_c_share2 + _pi_c_share3; //Additive notation for groups
-                                                                  // Send _pi_a_share, _pi_b_share, _pi_c_share to client
-    end_timer!(msm_section);
 }
 
 fn main() {

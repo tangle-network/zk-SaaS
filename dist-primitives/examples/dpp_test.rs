@@ -12,7 +12,7 @@ use secret_sharing::pss::PackedSharingParams;
 pub async fn d_pp_test<F: FftField + PrimeField, Net: MpcNet>(
     pp: &PackedSharingParams<F>,
     dom: &Radix2EvaluationDomain<F>,
-    net: &mut Net,
+    net: &Net,
 ) {
     // We apply FFT on this vector
     // let mut x = vec![F::ONE; cd.m];

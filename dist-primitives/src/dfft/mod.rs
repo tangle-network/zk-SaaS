@@ -4,7 +4,7 @@ use crate::{
 };
 use ark_ff::{FftField, PrimeField};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
-use ark_std::{end_timer, log2, start_timer};
+use ark_std::log2;
 use log::debug;
 use mpc_net::{MpcNetError, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
@@ -21,7 +21,7 @@ pub async fn d_fft<F: FftField + PrimeField, Net: MpcSerNet>(
     degree2: bool,
     dom: &Radix2EvaluationDomain<F>,
     pp: &PackedSharingParams<F>,
-    net: &mut Net,
+    net: &Net,
     sid: MultiplexedStreamID,
 ) -> Result<Vec<F>, MpcNetError> {
     debug_assert_eq!(
@@ -55,7 +55,7 @@ pub async fn d_ifft<F: FftField + PrimeField, Net: MpcSerNet>(
     degree2: bool,
     dom: &Radix2EvaluationDomain<F>,
     pp: &PackedSharingParams<F>,
-    net: &mut Net,
+    net: &Net,
     sid: MultiplexedStreamID,
 ) -> Result<Vec<F>, MpcNetError> {
     debug_assert_eq!(
@@ -100,7 +100,6 @@ fn fft1_in_place<F: FftField + PrimeField, Net: MpcSerNet>(
         px.len()
     );
 
-    let now = start_timer!(|| "FFT1");
     if net.is_king() {
         debug!("Applying fft1");
     }
@@ -121,8 +120,6 @@ fn fft1_in_place<F: FftField + PrimeField, Net: MpcSerNet>(
         }
     }
 
-    end_timer!(now);
-
     if net.is_king() {
         debug!("Finished fft1");
     }
@@ -135,8 +132,6 @@ fn fft2_in_place<F: FftField + PrimeField, Net: MpcSerNet>(
     net: &Net,
 ) {
     // King applies fft2, packs the vectors as desired and sends shares to parties
-
-    let now = start_timer!(|| "FFT2");
     let mut s2 = vec![F::zero(); s1.len()]; //Remove this time permitting
 
     if net.is_king() {
@@ -162,8 +157,6 @@ fn fft2_in_place<F: FftField + PrimeField, Net: MpcSerNet>(
 
     // s1.rotate_right(1);
 
-    end_timer!(now);
-
     if net.is_king() {
         debug!("Finished fft2");
     }
@@ -177,22 +170,19 @@ async fn fft2_with_rearrange_pad<F: FftField + PrimeField, Net: MpcSerNet>(
     degree2: bool,
     dom: &Radix2EvaluationDomain<F>,
     pp: &PackedSharingParams<F>,
-    net: &mut Net,
+    net: &Net,
     sid: MultiplexedStreamID,
 ) -> Result<Vec<F>, MpcNetError> {
     // King applies FFT2 with rearrange
 
     let mbyl = px.len();
 
-    let communication_timer = start_timer!(|| "ComToKing");
     let received_shares = net.send_to_king(&px, sid).await?;
-    end_timer!(communication_timer);
 
     let king_answer = received_shares.map(|all_shares| {
         let all_shares = transpose(all_shares);
         let mut s1: Vec<F> = vec![F::zero(); px.len() * pp.l];
 
-        let open_shares_timer = start_timer!(|| "Opening shares");
         for (i, share) in (0..mbyl).zip(all_shares) {
             let tmp = if degree2 {
                 pp.unpack2(share)
@@ -204,7 +194,6 @@ async fn fft2_with_rearrange_pad<F: FftField + PrimeField, Net: MpcSerNet>(
                 s1[i * pp.l + j] = tmp[j];
             }
         }
-        end_timer!(open_shares_timer);
 
         fft2_in_place(&mut s1, dom, pp, &net); // s1 constrains final output now
 
@@ -217,7 +206,6 @@ async fn fft2_with_rearrange_pad<F: FftField + PrimeField, Net: MpcSerNet>(
         if rearrange {
             fft_in_place_rearrange(&mut s1);
             let mut out_shares: Vec<Vec<F>> = Vec::new();
-            let pack_shares_timer = start_timer!(|| "Packing shares");
             for i in 0..s1.len() / pp.l {
                 out_shares.push(
                     // This will cause issues with memory benchmarking since it assumes everyone creates this instead of receiving it from dealer
@@ -230,7 +218,6 @@ async fn fft2_with_rearrange_pad<F: FftField + PrimeField, Net: MpcSerNet>(
                     ),
                 );
             }
-            end_timer!(pack_shares_timer);
             transpose(out_shares)
         } else {
             transpose(pack_vec(&s1, pp))
@@ -239,9 +226,7 @@ async fn fft2_with_rearrange_pad<F: FftField + PrimeField, Net: MpcSerNet>(
 
     drop(px);
 
-    let communication_timer = start_timer!(|| "ComFromKing");
     let got_from_king = net.recv_from_king(king_answer, sid).await?;
-    end_timer!(communication_timer);
 
     Ok(got_from_king)
 }

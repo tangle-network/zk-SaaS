@@ -2,7 +2,7 @@ use crate::multi::{
     multiplex_stream, MpcNetConnection, Peer, WrappedMuxStream,
     MULTIPLEXED_STREAMS,
 };
-use crate::{MpcNet, MpcNetError, MultiplexedStreamID, Stats};
+use crate::{MpcNet, MpcNetError, MultiplexedStreamID};
 use async_trait::async_trait;
 use futures::SinkExt;
 use futures::StreamExt;
@@ -13,6 +13,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, ToSocketAddrs};
+use tokio::sync::Mutex;
 use tokio_rustls::{TlsAcceptor, TlsStream};
 use tokio_util::bytes::Bytes;
 
@@ -106,7 +107,6 @@ impl ProdNet {
             id: 0,
             listener: None,
             peers: Default::default(),
-            stats: Default::default(),
         };
 
         for _ in 0..n_peers {
@@ -131,7 +131,7 @@ impl ProdNet {
         // Broadcast to each peer a SYN packet
         for conn in connections.peers.values_mut() {
             send_packet(
-                conn.streams.as_mut(),
+                conn.streams.as_ref(),
                 MultiplexedStreamID::Zero,
                 ProtocolPacket::Syn,
             )
@@ -141,7 +141,7 @@ impl ProdNet {
         // Wait for n_parties count of SynAck packets
         for conn in connections.peers.values_mut() {
             let packet =
-                recv_packet(conn.streams.as_mut(), MultiplexedStreamID::Zero)
+                recv_packet(conn.streams.as_ref(), MultiplexedStreamID::Zero)
                     .await?;
             if packet != ProtocolPacket::SynAck {
                 return Err(MpcNetError::Protocol {
@@ -175,7 +175,6 @@ impl ProdNet {
             id,
             listener: None,
             peers: Default::default(),
-            stats: Default::default(),
         };
         connections.peers.insert(
             0,
@@ -188,7 +187,7 @@ impl ProdNet {
 
         // Wait for a Syn packet
         let packet = recv_packet(
-            connections.peers.get_mut(&0).unwrap().streams.as_mut(),
+            connections.peers.get(&0).unwrap().streams.as_ref(),
             MultiplexedStreamID::Zero,
         )
         .await?;
@@ -201,7 +200,7 @@ impl ProdNet {
 
         // Send a SynAck packet to party_id=0
         send_packet(
-            connections.peers.get_mut(&0).unwrap().streams.as_mut(),
+            connections.peers.get(&0).unwrap().streams.as_ref(),
             MultiplexedStreamID::Zero,
             ProtocolPacket::SynAck,
         )
@@ -225,20 +224,8 @@ impl MpcNet for ProdNet {
         self.connections.is_init()
     }
 
-    fn deinit(&mut self) {
-        self.connections.deinit()
-    }
-
-    fn reset_stats(&mut self) {
-        self.connections.reset_stats()
-    }
-
-    fn stats(&self) -> &Stats {
-        self.connections.stats()
-    }
-
     async fn broadcast_bytes(
-        &mut self,
+        &self,
         bytes: &[u8],
         sid: MultiplexedStreamID,
     ) -> Result<Vec<Vec<u8>>, MpcNetError> {
@@ -246,7 +233,7 @@ impl MpcNet for ProdNet {
     }
 
     async fn send_bytes_to_king(
-        &mut self,
+        &self,
         bytes: &[u8],
         sid: MultiplexedStreamID,
     ) -> Result<Option<Vec<Vec<u8>>>, MpcNetError> {
@@ -254,7 +241,7 @@ impl MpcNet for ProdNet {
     }
 
     async fn recv_bytes_from_king(
-        &mut self,
+        &self,
         bytes: Option<Vec<Vec<u8>>>,
         sid: MultiplexedStreamID,
     ) -> Result<Vec<u8>, MpcNetError> {
@@ -263,28 +250,29 @@ impl MpcNet for ProdNet {
 }
 
 async fn send_packet(
-    streams: Option<&mut Vec<WrappedMuxStream<TlsStream<TcpStream>>>>,
+    streams: Option<&Vec<Mutex<WrappedMuxStream<TlsStream<TcpStream>>>>>,
     sid: MultiplexedStreamID,
     packet: ProtocolPacket,
 ) -> Result<(), MpcNetError> {
     let stream = streams.ok_or(MpcNetError::NotConnected)?;
-    let stream = stream
-        .get_mut(sid as usize)
-        .ok_or(MpcNetError::NotConnected)?;
+    let stream = stream.get(sid as usize).ok_or(MpcNetError::NotConnected)?;
     let packet = bincode2::serialize(&packet)?;
-    stream.send(Bytes::from(packet)).await?;
+    stream.lock().await.send(Bytes::from(packet)).await?;
     Ok(())
 }
 
 async fn recv_packet(
-    streams: Option<&mut Vec<WrappedMuxStream<TlsStream<TcpStream>>>>,
+    streams: Option<&Vec<Mutex<WrappedMuxStream<TlsStream<TcpStream>>>>>,
     sid: MultiplexedStreamID,
 ) -> Result<ProtocolPacket, MpcNetError> {
     let stream = streams.ok_or(MpcNetError::NotConnected)?;
-    let stream = stream
-        .get_mut(sid as usize)
-        .ok_or(MpcNetError::NotConnected)?;
-    let packet = stream.next().await.ok_or(MpcNetError::NotConnected)??;
+    let stream = stream.get(sid as usize).ok_or(MpcNetError::NotConnected)?;
+    let packet = stream
+        .lock()
+        .await
+        .next()
+        .await
+        .ok_or(MpcNetError::NotConnected)??;
     let packet = bincode2::deserialize(&packet)?;
     Ok(packet)
 }

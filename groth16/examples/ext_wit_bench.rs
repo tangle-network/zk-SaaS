@@ -9,7 +9,7 @@ async fn groth_ext_wit<F: PrimeField, R: Rng, Net: MpcNet>(
     rng: &mut R,
     cd: &ConstraintDomain<F>,
     pp: &PackedSharingParams<F>,
-    net: &mut Net,
+    net: &Net,
 ) -> Vec<F> {
     let mut p_eval: Vec<F> = vec![F::rand(rng); cd.m / pp.l];
     // Shares of P, Q, W drop from the sky

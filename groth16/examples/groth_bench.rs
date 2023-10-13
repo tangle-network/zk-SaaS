@@ -1,7 +1,6 @@
 use ark_ec::{bls12::Bls12, pairing::Pairing};
 use ark_ff::UniformRand;
 
-use ark_std::{end_timer, start_timer};
 use dist_primitives::dmsm;
 use log::debug;
 use mpc_net::{LocalTestNet as Net, MpcNet, MultiplexedStreamID};
@@ -19,7 +18,7 @@ use groth16::{
 async fn dgroth<E: Pairing, Net: MpcNet>(
     pp: &PackedSharingParams<E::ScalarField>,
     cd: &ConstraintDomain<E::ScalarField>,
-    net: &mut Net,
+    net: &Net,
 ) {
     // Add preprocessing vectors of size 4m/l
     // process u and v to get ready for multiplication
@@ -66,7 +65,6 @@ async fn dgroth<E: Pairing, Net: MpcNet>(
         h_share.len()
     );
 
-    let msm_section = start_timer!(|| "MSM operations");
     // Compute msm while dropping the base vectors as they are not used again
     let _pi_a_share: E::G1 =
         dmsm::d_msm(&crs_share.s, &a_share, pp, net, MultiplexedStreamID::One)
@@ -95,8 +93,6 @@ async fn dgroth<E: Pairing, Net: MpcNet>(
     println!("u done");
     let _pi_c_share: E::G1 = _pi_c_share1 + _pi_c_share2 + _pi_c_share3; //Additive notation for groups
                                                                          // Send _pi_a_share, _pi_b_share, _pi_c_share to client
-    end_timer!(msm_section);
-
     debug!("Done");
 }
 

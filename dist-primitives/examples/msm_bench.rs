@@ -1,7 +1,7 @@
 use ark_bls12_377::Fr;
 use ark_ec::CurveGroup;
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
-use ark_std::{end_timer, start_timer, UniformRand, Zero};
+use ark_std::{UniformRand, Zero};
 
 pub fn msm_test<G: CurveGroup>(dom: &Radix2EvaluationDomain<G::ScalarField>) {
     let rng = &mut ark_std::test_rng();
@@ -17,9 +17,7 @@ pub fn msm_test<G: CurveGroup>(dom: &Radix2EvaluationDomain<G::ScalarField>) {
 
     let x_pub_aff: Vec<G::Affine> = x_pub.iter().map(|s| (*s).into()).collect();
 
-    let nmsm = start_timer!(|| "Ark msm");
     G::msm(x_pub_aff.as_slice(), y_pub.as_slice()).unwrap();
-    end_timer!(nmsm);
 }
 
 fn main() {

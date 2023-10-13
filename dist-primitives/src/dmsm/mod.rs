@@ -1,7 +1,6 @@
 use crate::channel::MpcSerNet;
 use ark_ec::{CurveGroup, Group};
 use ark_poly::EvaluationDomain;
-use ark_std::{end_timer, start_timer};
 use mpc_net::{MpcNetError, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
 
@@ -66,7 +65,7 @@ pub async fn d_msm<G: CurveGroup, Net: MpcSerNet>(
     bases: &[G::Affine],
     scalars: &[G::ScalarField],
     pp: &PackedSharingParams<G::ScalarField>,
-    net: &mut Net,
+    net: &Net,
     sid: MultiplexedStreamID,
 ) -> Result<G, MpcNetError> {
     // Using affine is important because we don't want to create an extra vector for converting Projective to Affine.
@@ -74,9 +73,7 @@ pub async fn d_msm<G: CurveGroup, Net: MpcSerNet>(
 
     // First round of local computation done by parties
     println!("bases: {}, scalars: {}", bases.len(), scalars.len());
-    let basemsm_timer = start_timer!(|| "Base MSM");
     let c_share = G::msm(bases, scalars).unwrap();
-    end_timer!(basemsm_timer);
     // Now we do degree reduction -- psstoss
     // Send to king who reduces and sends shamir shares (not packed).
     // Should be randomized. First convert to projective share.
