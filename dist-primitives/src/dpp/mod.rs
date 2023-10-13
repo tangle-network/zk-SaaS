@@ -9,7 +9,6 @@ use crate::{
     },
 };
 use ark_ff::{FftField, Field, PrimeField};
-use ark_std::{end_timer, start_timer};
 use mpc_net::{MpcNetError, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
 
@@ -19,7 +18,7 @@ pub async fn d_pp<F: FftField + PrimeField + Field, Net: MpcSerNet>(
     num: Vec<F>,
     den: Vec<F>,
     pp: &PackedSharingParams<F>,
-    net: &mut Net,
+    net: &Net,
     sid: MultiplexedStreamID,
 ) -> Result<Vec<F>, MpcNetError> {
     // using some dummy randomness
@@ -27,19 +26,15 @@ pub async fn d_pp<F: FftField + PrimeField + Field, Net: MpcSerNet>(
     let sinv = s.inverse().unwrap();
 
     // multiply all entries of px by of s
-    let dpp_rand_timer = start_timer!(|| "DppRand");
     let num_rand = num.iter().map(|&x| x * s).collect::<Vec<_>>();
     let mut den_rand = den.iter().map(|&x| x * s).collect::<Vec<_>>();
-    end_timer!(dpp_rand_timer);
 
     let mut numden_rand = num_rand;
     numden_rand.append(&mut den_rand);
 
     // Along with degree reduction
     // King recovers secrets, computes partial products and repacks
-    let communication_timer = start_timer!(|| "ComToKing");
     let received_shares = net.send_to_king(&numden_rand, sid).await?;
-    end_timer!(communication_timer);
 
     let king_answer: Option<Vec<Vec<F>>> =
         received_shares.map(|numden_shares: Vec<Vec<F>>| {
@@ -49,7 +44,6 @@ pub async fn d_pp<F: FftField + PrimeField + Field, Net: MpcSerNet>(
                 pp.n,
                 "Mismatch of size in d_pp"
             );
-            let dpp_timer = start_timer!(|| "DPP");
             let numden_shares = transpose(numden_shares);
 
             // Unpack the secrets
@@ -81,20 +75,14 @@ pub async fn d_pp<F: FftField + PrimeField + Field, Net: MpcSerNet>(
 
             // send shares to parties
             // (m/l)xn -> nx(m/l)
-            let pp_numden_shares = transpose(pp_numden_shares);
-            end_timer!(dpp_timer);
-            pp_numden_shares
+            transpose(pp_numden_shares)
         });
 
-    let communication_timer = start_timer!(|| "ComFromKing");
     let mut pp_numden_rand = net.recv_from_king(king_answer, sid).await?;
-    end_timer!(communication_timer);
 
     // Finally, remove the ranomness in the partial products
     // multiply all entries of pp_pxss by of s
     // do degree reduction
-    let dpp_rand_timer = start_timer!(|| "DppRand");
     pp_numden_rand.iter_mut().for_each(|x| *x *= sinv);
-    end_timer!(dpp_rand_timer);
     deg_red(pp_numden_rand, pp, net, sid).await //packed shares of partial products
 }

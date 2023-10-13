@@ -1,5 +1,4 @@
 use ark_ff::{FftField, PrimeField};
-use ark_std::{end_timer, start_timer};
 use dist_primitives::channel::MpcSerNet;
 use dist_primitives::dfft::{d_fft, d_ifft};
 use mpc_net::{MpcNetError, MultiplexedStreamID};
@@ -15,26 +14,25 @@ pub async fn d_ext_wit<F: FftField + PrimeField, R: Rng, Net: MpcSerNet>(
     rng: &mut R,
     pp: &PackedSharingParams<F>,
     cd: &ConstraintDomain<F>,
-    net: &mut Net,
+    net: &Net,
 ) -> Result<Vec<F>, MpcNetError> {
     // Preprocessing to account for memory usage
     let mut single_pp: Vec<Vec<F>> = vec![vec![F::one(); cd.m / pp.l]; 3];
     let mut double_pp: Vec<Vec<F>> = vec![vec![F::one(); 2 * cd.m / pp.l]; 11];
-    const CHANNEL: MultiplexedStreamID = MultiplexedStreamID::One;
-    let fft_section = start_timer!(|| "Field operations");
+    const CHANNEL0: MultiplexedStreamID = MultiplexedStreamID::Zero;
+    const CHANNEL1: MultiplexedStreamID = MultiplexedStreamID::One;
+    const CHANNEL2: MultiplexedStreamID = MultiplexedStreamID::Two;
     /////////////IFFT
     // Starting with shares of evals
-    // TODO: use FuturesOrdered below for concurrency, AFTER figuring out how to properly route messages
-    // by treating each below as a sub-protocol
     let p_coeff =
-        d_ifft(p_eval, true, 2, false, &cd.constraint, pp, net, CHANNEL)
-            .await?;
+        d_ifft(p_eval, true, 2, false, &cd.constraint, pp, net, CHANNEL0);
     let q_coeff =
-        d_ifft(q_eval, true, 2, false, &cd.constraint, pp, net, CHANNEL)
-            .await?;
+        d_ifft(q_eval, true, 2, false, &cd.constraint, pp, net, CHANNEL1);
     let w_coeff =
-        d_ifft(w_eval, true, 2, false, &cd.constraint, pp, net, CHANNEL)
-            .await?;
+        d_ifft(w_eval, true, 2, false, &cd.constraint, pp, net, CHANNEL2);
+
+    let (p_coeff, q_coeff, w_coeff) =
+        tokio::try_join!(p_coeff, q_coeff, w_coeff)?;
 
     // deleting randomness used
     single_pp.truncate(single_pp.len() - 3);
@@ -43,15 +41,13 @@ pub async fn d_ext_wit<F: FftField + PrimeField, R: Rng, Net: MpcSerNet>(
     /////////////FFT
     // Starting with shares of coefficients
     let p_eval =
-        d_fft(p_coeff, true, 1, false, &cd.constraint2, pp, net, CHANNEL)
-            .await?;
+        d_fft(p_coeff, true, 1, false, &cd.constraint2, pp, net, CHANNEL0);
     let q_eval =
-        d_fft(q_coeff, true, 1, false, &cd.constraint2, pp, net, CHANNEL)
-            .await?;
+        d_fft(q_coeff, true, 1, false, &cd.constraint2, pp, net, CHANNEL1);
     let w_eval =
-        d_fft(w_coeff, true, 1, false, &cd.constraint2, pp, net, CHANNEL)
-            .await?;
+        d_fft(w_coeff, true, 1, false, &cd.constraint2, pp, net, CHANNEL2);
 
+    let (p_eval, q_eval, w_eval) = tokio::try_join!(p_eval, q_eval, w_eval)?;
     // deleting randomness used
     double_pp.truncate(double_pp.len() - 6);
 
@@ -80,14 +76,13 @@ pub async fn d_ext_wit<F: FftField + PrimeField, R: Rng, Net: MpcSerNet>(
 
     // Parties apply FFT1 locally
     let mut h_coeff =
-        d_ifft(h_eval, false, 1, true, &cd.constraint2, pp, net, CHANNEL)
+        d_ifft(h_eval, false, 1, true, &cd.constraint2, pp, net, CHANNEL0)
             .await?;
 
     // deleting randomness used
     double_pp.truncate(double_pp.len() - 2);
 
     h_coeff.truncate(2 * cd.m);
-    end_timer!(fft_section);
 
     Ok(h_coeff)
 }
@@ -96,7 +91,7 @@ pub async fn groth_ext_wit<F: PrimeField, R: Rng, Net: MpcSerNet>(
     rng: &mut R,
     cd: &ConstraintDomain<F>,
     pp: &PackedSharingParams<F>,
-    net: &mut Net,
+    net: &Net,
 ) -> Result<Vec<F>, MpcNetError> {
     let mut p_eval: Vec<F> = vec![F::rand(rng); cd.m / pp.l];
     // Shares of P, Q, W drop from the sky

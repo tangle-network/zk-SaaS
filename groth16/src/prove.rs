@@ -17,7 +17,7 @@ pub async fn compute_A<
     r: F,
     (s_pp, S): (PackedSharingParams<E::ScalarField>, Vec<E::G1Affine>),
     a: Vec<E::ScalarField>,
-    net: &mut Net,
+    net: &Net,
     sid: MultiplexedStreamID,
 ) -> Result<E::G1Affine, MpcNetError> {
     // We use variables (L, N, (S_i){i∈[0,m]}) to denote elements in G1
@@ -52,7 +52,7 @@ pub async fn compute_B<
     s: F,
     (v_pp, V): (PackedSharingParams<E::ScalarField>, Vec<E::G2Affine>),
     a: Vec<E::ScalarField>,
-    net: &mut Net,
+    net: &Net,
     sid: MultiplexedStreamID,
 ) -> Result<E::G2Affine, MpcNetError> {
     // We use variables (Z, K, (V_i){i∈[0,m]}) to denote elements in G2
@@ -88,19 +88,24 @@ pub async fn compute_C<
     (h_pp, H): (PackedSharingParams<E::ScalarField>, Vec<E::G1Affine>),
     a: Vec<E::ScalarField>,
     h: Vec<E::ScalarField>,
-    net: &mut Net,
-    sid: MultiplexedStreamID,
+    net: &Net,
 ) -> Result<E::G1Affine, MpcNetError> {
     // We use variables (A, M, ∏{i∈[l+1,m]}(W_i)^a_i, ∏{i∈[0,Q−2]}(U_i)h_i, ∏{i∈[0,m]}(H_i)^a_i)
     // to denote elements in G1. We also assume that all the servers computing the proof
     // get A, M, s, r and h in the clear and only receive packed shares of the remaining elements.
 
+    const CHANNEL0: MultiplexedStreamID = MultiplexedStreamID::Zero;
+    const CHANNEL1: MultiplexedStreamID = MultiplexedStreamID::One;
+    const CHANNEL2: MultiplexedStreamID = MultiplexedStreamID::Two;
+
     // Calculate ∏{i∈[l+1,m]}(W_i)^a_i using dmsm
-    let w = d_msm::<E::G1, _>(&W, &a, &w_pp, net, sid).await?;
+    let w = d_msm::<E::G1, _>(&W, &a, &w_pp, net, CHANNEL0);
     // Calculate ∏{i∈[0,Q−2]}(U_i)^h_i using dmsm
-    let u = d_msm::<E::G1, _>(&U, &h, &u_pp, net, sid).await?;
+    let u = d_msm::<E::G1, _>(&U, &h, &u_pp, net, CHANNEL1);
     // Calculate ∏{i∈[0,m]}(H_i)^a_i using dmsm
-    let h = d_msm::<E::G1, _>(&H, &a, &h_pp, net, sid).await?;
+    let h = d_msm::<E::G1, _>(&H, &a, &h_pp, net, CHANNEL2);
+
+    let (w, u, h) = tokio::try_join!(w, u, h)?;
 
     // Calculate A^s
     let v0 = A.pow(s.into_bigint());

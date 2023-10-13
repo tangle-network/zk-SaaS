@@ -8,16 +8,16 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::{MpcNetError, MultiplexedStreamID};
-use ark_std::{end_timer, start_timer};
 use async_smux::{MuxBuilder, MuxStream};
 use async_trait::async_trait;
 use futures::stream::{FuturesOrdered, FuturesUnordered};
 use futures::{SinkExt, StreamExt, TryStreamExt};
 use parking_lot::Mutex;
+use tokio::sync::Mutex as TokioMutex;
 use tokio_util::bytes::Bytes;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
-use super::{MpcNet, Stats};
+use super::MpcNet;
 
 pub type WrappedStream<T> = Framed<T, LengthDelimitedCodec>;
 
@@ -33,7 +33,7 @@ fn wrap_stream<T: AsyncRead + AsyncWrite>(
 pub struct Peer<IO: AsyncRead + AsyncWrite + Unpin> {
     pub id: u32,
     pub listen_addr: SocketAddr,
-    pub streams: Option<Vec<WrappedMuxStream<IO>>>,
+    pub streams: Option<Vec<TokioMutex<WrappedMuxStream<IO>>>>,
 }
 
 impl<IO: AsyncRead + AsyncWrite + Unpin> Debug for Peer<IO> {
@@ -66,20 +66,20 @@ pub async fn multiplex_stream<
     channels: usize,
     is_server: bool,
     stream: T,
-) -> Result<Vec<WrappedMuxStream<T>>, MpcNetError> {
+) -> Result<Vec<TokioMutex<WrappedMuxStream<T>>>, MpcNetError> {
     if is_server {
         let (_connector, mut acceptor, worker) =
             MuxBuilder::server().with_connection(stream).build();
         tokio::spawn(worker);
         let mut ret = Vec::new();
         for _ in 0..channels {
-            ret.push(wrap_stream(acceptor.accept().await.ok_or_else(
-                || {
+            ret.push(TokioMutex::new(wrap_stream(
+                acceptor.accept().await.ok_or_else(|| {
                     MpcNetError::Generic(
                         "Error accepting connection".to_string(),
                     )
-                },
-            )?));
+                })?,
+            )));
         }
 
         Ok(ret)
@@ -89,7 +89,7 @@ pub async fn multiplex_stream<
         tokio::spawn(worker);
         let mut ret = Vec::new();
         for _ in 0..channels {
-            ret.push(wrap_stream(connector.connect()?));
+            ret.push(TokioMutex::new(wrap_stream(connector.connect()?)));
         }
 
         Ok(ret)
@@ -101,12 +101,10 @@ pub struct MpcNetConnection<IO: AsyncRead + AsyncWrite + Unpin> {
     pub id: u32,
     pub listener: Option<TcpListener>,
     pub peers: HashMap<u32, Peer<IO>>,
-    pub stats: Stats,
 }
 
 impl MpcNetConnection<TcpStream> {
     async fn connect_to_all(&mut self) -> Result<(), MpcNetError> {
-        let timer = start_timer!(|| "Connecting");
         let n_minus_1 = self.n_parties() - 1;
         let my_id = self.id;
 
@@ -214,8 +212,6 @@ impl MpcNetConnection<TcpStream> {
         }
 
         println!("Done with recv_from_king");
-
-        end_timer!(timer);
         Ok(())
     }
 }
@@ -226,36 +222,31 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> MpcNetConnection<IO> {
     }
 
     async fn broadcast(
-        &mut self,
+        &self,
         bytes_out: &[u8],
         sid: MultiplexedStreamID,
     ) -> Result<Vec<Vec<u8>>, MpcNetError> {
-        let timer = start_timer!(|| format!("Broadcast {}", bytes_out.len()));
         let bytes_out: Bytes = bytes_out.to_vec().into();
-        let m = bytes_out.len();
         let own_id = self.id;
-        self.stats.bytes_sent += self.peers.len() * m;
-        self.stats.bytes_recv += self.peers.len() * m;
-        self.stats.broadcasts += 1;
 
         let mut r = FuturesOrdered::default();
-        for (id, peer) in self.peers.iter_mut() {
+        for (id, peer) in self.peers.iter() {
             let bytes_out = bytes_out.clone();
             r.push_back(Box::pin(async move {
                 // TODO: optimize this
                 let bytes_in = match *id {
                     id if id < own_id => {
                         let ret =
-                            recv_stream(peer.streams.as_mut(), sid).await?;
-                        send_stream(peer.streams.as_mut(), bytes_out, sid)
+                            recv_stream(peer.streams.as_ref(), sid).await?;
+                        send_stream(peer.streams.as_ref(), bytes_out, sid)
                             .await?;
                         ret.to_vec()
                     }
                     id if id == own_id => bytes_out.to_vec(),
                     _ => {
-                        send_stream(peer.streams.as_mut(), bytes_out, sid)
+                        send_stream(peer.streams.as_ref(), bytes_out, sid)
                             .await?;
-                        recv_stream(peer.streams.as_mut(), sid).await?.to_vec()
+                        recv_stream(peer.streams.as_ref(), sid).await?.to_vec()
                     }
                 };
 
@@ -263,35 +254,30 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> MpcNetConnection<IO> {
             }));
         }
 
-        let r = r.try_collect::<Vec<Vec<u8>>>().await;
-        end_timer!(timer);
-        r
+        r.try_collect::<Vec<Vec<u8>>>().await
     }
 
     // If we are the king, we receive all the packets
     // If we are not the king, we send our packet to the king
     async fn send_to_king(
-        &mut self,
+        &self,
         bytes_out: &[u8],
         sid: MultiplexedStreamID,
     ) -> Result<Option<Vec<Vec<u8>>>, MpcNetError> {
-        let timer = start_timer!(|| format!("To king {}", bytes_out.len()));
         let bytes_out: Bytes = bytes_out.to_vec().into();
-        let m = bytes_out.len();
         let own_id = self.id;
-        self.stats.to_king += 1;
+
         let r = if self.am_king() {
-            self.stats.bytes_recv += self.peers.len() * m;
             let mut r = FuturesOrdered::new();
 
-            for (id, peer) in self.peers.iter_mut() {
+            for (id, peer) in self.peers.iter() {
                 let bytes_out: Bytes = bytes_out.clone();
                 r.push_back(Box::pin(async move {
                     // TODO: optimize this
                     let bytes_in = if *id == own_id {
                         bytes_out.to_vec()
                     } else {
-                        recv_stream(peer.streams.as_mut(), sid).await?.to_vec()
+                        recv_stream(peer.streams.as_ref(), sid).await?.to_vec()
                     };
 
                     Ok::<_, MpcNetError>(bytes_in)
@@ -300,29 +286,24 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> MpcNetConnection<IO> {
 
             Ok(Some(r.try_collect::<Vec<Vec<u8>>>().await?))
         } else {
-            self.stats.bytes_sent += m;
-            let stream = self.peers.get_mut(&0).unwrap().streams.as_mut();
+            let stream = self.peers.get(&0).unwrap().streams.as_ref();
             send_stream(stream, bytes_out, sid).await?;
             Ok(None)
         };
-        end_timer!(timer);
         r
     }
 
     async fn recv_from_king(
-        &mut self,
+        &self,
         bytes_out: Option<Vec<Vec<u8>>>,
         sid: MultiplexedStreamID,
     ) -> Result<Vec<u8>, MpcNetError> {
         let own_id = self.id;
-        self.stats.from_king += 1;
         if self.am_king() {
             let bytes_out = bytes_out.unwrap();
             let m = bytes_out[0].len();
-            let timer = start_timer!(|| format!("From king {}", m));
-            self.stats.bytes_sent += self.peers.len() * (m + 8);
 
-            for (id, peer) in self.peers.iter_mut().filter(|p| *p.0 != own_id) {
+            for (id, peer) in self.peers.iter().filter(|p| *p.0 != own_id) {
                 if bytes_out[*id as usize].len() != m {
                     return Err(MpcNetError::Protocol {
                         err: format!("Peer {} sent wrong number of bytes", id),
@@ -331,26 +312,18 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> MpcNetConnection<IO> {
                 }
 
                 send_stream(
-                    peer.streams.as_mut(),
+                    peer.streams.as_ref(),
                     bytes_out[*id as usize].clone().into(),
                     sid,
                 )
                 .await?;
             }
 
-            end_timer!(timer);
             Ok(bytes_out[own_id as usize].clone())
         } else {
-            let stream = self.peers.get_mut(&0).unwrap().streams.as_mut();
+            let stream = self.peers.get(&0).unwrap().streams.as_ref();
             let ret = recv_stream(stream, sid).await?;
-            self.stats.bytes_recv += ret.len();
             Ok(ret.into())
-        }
-    }
-
-    fn uninit(&mut self) {
-        for p in &mut self.peers {
-            p.1.streams = None;
         }
     }
 }
@@ -379,7 +352,6 @@ impl LocalTestNet {
                 id: my_party_id as u32,
                 listener: Some(my_listener),
                 peers: Default::default(),
-                stats: Default::default(),
             };
             for peer_id in 0..n_parties {
                 // NOTE: this is the listen addr
@@ -450,20 +422,8 @@ impl<IO: AsyncRead + AsyncWrite + Unpin + Send> MpcNet
         self.peers.iter().all(|r| r.1.streams.is_some())
     }
 
-    fn deinit(&mut self) {
-        self.uninit()
-    }
-
-    fn reset_stats(&mut self) {
-        self.stats = Stats::default();
-    }
-
-    fn stats(&self) -> &Stats {
-        &self.stats
-    }
-
     async fn broadcast_bytes(
-        &mut self,
+        &self,
         bytes: &[u8],
         sid: MultiplexedStreamID,
     ) -> Result<Vec<Vec<u8>>, MpcNetError> {
@@ -471,7 +431,7 @@ impl<IO: AsyncRead + AsyncWrite + Unpin + Send> MpcNet
     }
 
     async fn send_bytes_to_king(
-        &mut self,
+        &self,
         bytes: &[u8],
         sid: MultiplexedStreamID,
     ) -> Result<Option<Vec<Vec<u8>>>, MpcNetError> {
@@ -479,7 +439,7 @@ impl<IO: AsyncRead + AsyncWrite + Unpin + Send> MpcNet
     }
 
     async fn recv_bytes_from_king(
-        &mut self,
+        &self,
         bytes: Option<Vec<Vec<u8>>>,
         sid: MultiplexedStreamID,
     ) -> Result<Vec<u8>, MpcNetError> {
@@ -488,23 +448,25 @@ impl<IO: AsyncRead + AsyncWrite + Unpin + Send> MpcNet
 }
 
 async fn send_stream<T: AsyncRead + AsyncWrite + Unpin>(
-    stream: Option<&mut Vec<WrappedStream<T>>>,
+    stream: Option<&Vec<TokioMutex<WrappedStream<T>>>>,
     bytes: Bytes,
     sid: MultiplexedStreamID,
 ) -> Result<(), MpcNetError> {
-    if let Some(stream) = stream.and_then(|r| r.get_mut(sid as usize)) {
-        Ok(stream.send(bytes).await?)
+    if let Some(stream) = stream.and_then(|r| r.get(sid as usize)) {
+        Ok(stream.lock().await.send(bytes).await?)
     } else {
         Err(MpcNetError::Generic("Stream is None".to_string()))
     }
 }
 
 async fn recv_stream<T: AsyncRead + AsyncWrite + Unpin>(
-    stream: Option<&mut Vec<WrappedStream<T>>>,
+    stream: Option<&Vec<TokioMutex<WrappedStream<T>>>>,
     sid: MultiplexedStreamID,
 ) -> Result<Bytes, MpcNetError> {
-    if let Some(stream) = stream.and_then(|r| r.get_mut(sid as usize)) {
+    if let Some(stream) = stream.and_then(|r| r.get(sid as usize)) {
         Ok(stream
+            .lock()
+            .await
             .next()
             .await
             .ok_or_else(|| MpcNetError::Generic("Stream died".to_string()))??
