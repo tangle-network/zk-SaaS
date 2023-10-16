@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::future::Future;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -190,7 +191,7 @@ impl MpcNetConnection<TcpStream> {
         println!("All connected");
 
         // Every party will use this channel for genesis
-        let genesis_round_channel = MultiplexedStreamID::One;
+        let genesis_round_channel = MultiplexedStreamID::Zero;
 
         // Do a round with the king, to be sure everyone is ready
         let from_all = self
@@ -216,7 +217,7 @@ impl MpcNetConnection<TcpStream> {
     }
 }
 
-impl<IO: AsyncRead + AsyncWrite + Unpin> MpcNetConnection<IO> {
+impl<IO: AsyncRead + AsyncWrite + Unpin + Send> MpcNetConnection<IO> {
     fn is_king(&self) -> bool {
         self.id == 0
     }
@@ -233,6 +234,10 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> MpcNetConnection<IO> {
 
         let r = if self.is_king() {
             let mut r = FuturesOrdered::new();
+            let bytes_king = bytes_out.clone();
+            r.push_back(Box::pin(async move {
+                Ok(bytes_king)
+            }) as Pin<Box<dyn Future<Output=Result<Bytes, MpcNetError>> + Send>>);
 
             for (id, peer) in self.peers.iter() {
                 let bytes_out: Bytes = bytes_out.clone();
