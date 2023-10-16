@@ -225,7 +225,7 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> MpcNetConnection<IO> {
         &self,
         bytes_out: &[u8],
         sid: MultiplexedStreamID,
-    ) -> Result<Vec<Vec<u8>>, MpcNetError> {
+    ) -> Result<Vec<Bytes>, MpcNetError> {
         let bytes_out: Bytes = bytes_out.to_vec().into();
         let own_id = self.id;
 
@@ -240,13 +240,13 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> MpcNetConnection<IO> {
                             recv_stream(peer.streams.as_ref(), sid).await?;
                         send_stream(peer.streams.as_ref(), bytes_out, sid)
                             .await?;
-                        ret.to_vec()
+                        ret
                     }
-                    id if id == own_id => bytes_out.to_vec(),
+                    id if id == own_id => bytes_out,
                     _ => {
                         send_stream(peer.streams.as_ref(), bytes_out, sid)
                             .await?;
-                        recv_stream(peer.streams.as_ref(), sid).await?.to_vec()
+                        recv_stream(peer.streams.as_ref(), sid).await?
                     }
                 };
 
@@ -254,7 +254,7 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> MpcNetConnection<IO> {
             }));
         }
 
-        r.try_collect::<Vec<Vec<u8>>>().await
+        r.try_collect::<Vec<Bytes>>().await
     }
 
     // If we are the king, we receive all the packets
@@ -263,8 +263,8 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> MpcNetConnection<IO> {
         &self,
         bytes_out: &[u8],
         sid: MultiplexedStreamID,
-    ) -> Result<Option<Vec<Vec<u8>>>, MpcNetError> {
-        let bytes_out: Bytes = bytes_out.to_vec().into();
+    ) -> Result<Option<Vec<Bytes>>, MpcNetError> {
+        let bytes_out = Bytes::copy_from_slice(bytes_out);
         let own_id = self.id;
 
         let r = if self.am_king() {
@@ -275,16 +275,16 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> MpcNetConnection<IO> {
                 r.push_back(Box::pin(async move {
                     // TODO: optimize this
                     let bytes_in = if *id == own_id {
-                        bytes_out.to_vec()
+                        bytes_out
                     } else {
-                        recv_stream(peer.streams.as_ref(), sid).await?.to_vec()
+                        recv_stream(peer.streams.as_ref(), sid).await?
                     };
 
                     Ok::<_, MpcNetError>(bytes_in)
                 }));
             }
 
-            Ok(Some(r.try_collect::<Vec<Vec<u8>>>().await?))
+            Ok(Some(r.try_collect::<Vec<Bytes>>().await?))
         } else {
             let stream = self.peers.get(&0).unwrap().streams.as_ref();
             send_stream(stream, bytes_out, sid).await?;
@@ -295,9 +295,9 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> MpcNetConnection<IO> {
 
     async fn recv_from_king(
         &self,
-        bytes_out: Option<Vec<Vec<u8>>>,
+        bytes_out: Option<Vec<Bytes>>,
         sid: MultiplexedStreamID,
-    ) -> Result<Vec<u8>, MpcNetError> {
+    ) -> Result<Bytes, MpcNetError> {
         let own_id = self.id;
         if self.am_king() {
             let bytes_out = bytes_out.unwrap();
@@ -313,7 +313,7 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> MpcNetConnection<IO> {
 
                 send_stream(
                     peer.streams.as_ref(),
-                    bytes_out[*id as usize].clone().into(),
+                    bytes_out[*id as usize].clone(),
                     sid,
                 )
                 .await?;
@@ -323,7 +323,7 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> MpcNetConnection<IO> {
         } else {
             let stream = self.peers.get(&0).unwrap().streams.as_ref();
             let ret = recv_stream(stream, sid).await?;
-            Ok(ret.into())
+            Ok(ret)
         }
     }
 }
@@ -426,7 +426,7 @@ impl<IO: AsyncRead + AsyncWrite + Unpin + Send> MpcNet
         &self,
         bytes: &[u8],
         sid: MultiplexedStreamID,
-    ) -> Result<Vec<Vec<u8>>, MpcNetError> {
+    ) -> Result<Vec<Bytes>, MpcNetError> {
         self.broadcast(bytes, sid).await
     }
 
@@ -434,15 +434,15 @@ impl<IO: AsyncRead + AsyncWrite + Unpin + Send> MpcNet
         &self,
         bytes: &[u8],
         sid: MultiplexedStreamID,
-    ) -> Result<Option<Vec<Vec<u8>>>, MpcNetError> {
+    ) -> Result<Option<Vec<Bytes>>, MpcNetError> {
         self.send_to_king(bytes, sid).await
     }
 
     async fn recv_bytes_from_king(
         &self,
-        bytes: Option<Vec<Vec<u8>>>,
+        bytes: Option<Vec<Bytes>>,
         sid: MultiplexedStreamID,
-    ) -> Result<Vec<u8>, MpcNetError> {
+    ) -> Result<Bytes, MpcNetError> {
         self.recv_from_king(bytes, sid).await
     }
 }
