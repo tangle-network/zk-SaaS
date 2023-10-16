@@ -24,8 +24,8 @@ pub trait CertToDer {
 
 #[derive(Clone)]
 pub struct RustlsCertificate {
-    cert: rustls::Certificate,
-    private_key: rustls::PrivateKey,
+    pub cert: rustls::Certificate,
+    pub private_key: rustls::PrivateKey,
 }
 
 impl CertToDer for RustlsCertificate {
@@ -154,18 +154,25 @@ impl ProdNet {
         Ok(Self { connections })
     }
 
-    pub async fn new_peer<R: CertToDer>(
+    pub async fn new_peer<R: CertToDer, T: std::net::ToSocketAddrs>(
         id: u32,
-        king: SocketAddr,
+        king: T,
         identity: R,
         server_cert: RootCertStore,
     ) -> Result<Self, MpcNetError> {
-        let stream = TcpStream::connect(king).await?;
+        let king_addr: SocketAddr =
+            king.to_socket_addrs()?
+                .next()
+                .ok_or(MpcNetError::BadInput {
+                    err: "King socket addr invalid",
+                })?;
+
+        let stream = TcpStream::connect(king_addr).await?;
         let tls_connector =
             create_client_mutual_tls_connector(server_cert, identity)?;
         let mut stream = TlsStream::Client(
             tls_connector
-                .connect(rustls::ServerName::IpAddress(king.ip()), stream)
+                .connect(rustls::ServerName::IpAddress(king_addr.ip()), stream)
                 .await?,
         );
         stream.write_u32(id).await?;
@@ -180,7 +187,7 @@ impl ProdNet {
             0,
             Peer {
                 id: 0,
-                listen_addr: king,
+                listen_addr: king_addr,
                 streams: Some(muxed),
             },
         );
