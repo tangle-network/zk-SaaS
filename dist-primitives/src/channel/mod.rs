@@ -5,30 +5,6 @@ use mpc_net::{MpcNet, MpcNetError, MultiplexedStreamID};
 
 #[async_trait]
 pub trait MpcSerNet: MpcNet {
-    async fn broadcast<T: CanonicalDeserialize + CanonicalSerialize + Send>(
-        &self,
-        out: &T,
-        sid: MultiplexedStreamID,
-    ) -> Result<Vec<T>, MpcNetError> {
-        let mut bytes_out = Vec::new();
-        out.serialize_compressed(&mut bytes_out).unwrap();
-        let bytes_in = self.broadcast_bytes(&bytes_out, sid).await?;
-        let results: Vec<Result<T, MpcNetError>> = bytes_in
-            .into_iter()
-            .map(|b| {
-                T::deserialize_compressed(&b[..])
-                    .map_err(|err| MpcNetError::Generic(err.to_string()))
-            })
-            .collect();
-
-        let mut ret = Vec::new();
-        for result in results {
-            ret.push(result?);
-        }
-
-        Ok(ret)
-    }
-
     async fn send_to_king<T: CanonicalDeserialize + CanonicalSerialize>(
         &self,
         out: &T,

@@ -217,44 +217,8 @@ impl MpcNetConnection<TcpStream> {
 }
 
 impl<IO: AsyncRead + AsyncWrite + Unpin> MpcNetConnection<IO> {
-    fn am_king(&self) -> bool {
+    fn is_king(&self) -> bool {
         self.id == 0
-    }
-
-    async fn broadcast(
-        &self,
-        bytes_out: &[u8],
-        sid: MultiplexedStreamID,
-    ) -> Result<Vec<Bytes>, MpcNetError> {
-        let bytes_out: Bytes = bytes_out.to_vec().into();
-        let own_id = self.id;
-
-        let mut r = FuturesOrdered::default();
-        for (id, peer) in self.peers.iter() {
-            let bytes_out = bytes_out.clone();
-            r.push_back(Box::pin(async move {
-                // TODO: optimize this
-                let bytes_in = match *id {
-                    id if id < own_id => {
-                        let ret =
-                            recv_stream(peer.streams.as_ref(), sid).await?;
-                        send_stream(peer.streams.as_ref(), bytes_out, sid)
-                            .await?;
-                        ret
-                    }
-                    id if id == own_id => bytes_out,
-                    _ => {
-                        send_stream(peer.streams.as_ref(), bytes_out, sid)
-                            .await?;
-                        recv_stream(peer.streams.as_ref(), sid).await?
-                    }
-                };
-
-                Ok(bytes_in)
-            }));
-        }
-
-        r.try_collect::<Vec<Bytes>>().await
     }
 
     // If we are the king, we receive all the packets
@@ -267,13 +231,12 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> MpcNetConnection<IO> {
         let bytes_out = Bytes::copy_from_slice(bytes_out);
         let own_id = self.id;
 
-        let r = if self.am_king() {
+        let r = if self.is_king() {
             let mut r = FuturesOrdered::new();
 
             for (id, peer) in self.peers.iter() {
                 let bytes_out: Bytes = bytes_out.clone();
                 r.push_back(Box::pin(async move {
-                    // TODO: optimize this
                     let bytes_in = if *id == own_id {
                         bytes_out
                     } else {
@@ -299,8 +262,24 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> MpcNetConnection<IO> {
         sid: MultiplexedStreamID,
     ) -> Result<Bytes, MpcNetError> {
         let own_id = self.id;
-        if self.am_king() {
-            let bytes_out = bytes_out.unwrap();
+        let n_parties = self.peers.len() + 1;
+
+        if let Some(bytes_out) = bytes_out {
+            if !self.is_king() {
+                return Err(MpcNetError::BadInput {
+                    err: "recv_from_king called with bytes_out when not king",
+                });
+            }
+
+            if bytes_out.len() != n_parties {
+                return Err(MpcNetError::BadInputLength {
+                    err:
+                        "recv_from_king called with wrong number of input bytes",
+                    expected: n_parties,
+                    got: bytes_out.len(),
+                });
+            }
+
             let m = bytes_out[0].len();
 
             for (id, peer) in self.peers.iter().filter(|p| *p.0 != own_id) {
@@ -321,6 +300,12 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> MpcNetConnection<IO> {
 
             Ok(bytes_out[own_id as usize].clone())
         } else {
+            if self.is_king() {
+                return Err(MpcNetError::BadInput {
+                    err: "recv_from_king called with no bytes_out when king",
+                });
+            }
+
             let stream = self.peers.get(&0).unwrap().streams.as_ref();
             let ret = recv_stream(stream, sid).await?;
             Ok(ret)
@@ -420,14 +405,6 @@ impl<IO: AsyncRead + AsyncWrite + Unpin + Send> MpcNet
 
     fn is_init(&self) -> bool {
         self.peers.iter().all(|r| r.1.streams.is_some())
-    }
-
-    async fn broadcast_bytes(
-        &self,
-        bytes: &[u8],
-        sid: MultiplexedStreamID,
-    ) -> Result<Vec<Bytes>, MpcNetError> {
-        self.broadcast(bytes, sid).await
     }
 
     async fn send_bytes_to_king(
