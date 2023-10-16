@@ -224,14 +224,6 @@ impl MpcNet for ProdNet {
         self.connections.is_init()
     }
 
-    async fn broadcast_bytes(
-        &self,
-        bytes: &[u8],
-        sid: MultiplexedStreamID,
-    ) -> Result<Vec<Bytes>, MpcNetError> {
-        self.connections.broadcast_bytes(bytes, sid).await
-    }
-
     async fn send_bytes_to_king(
         &self,
         bytes: &[u8],

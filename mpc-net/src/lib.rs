@@ -10,8 +10,19 @@ use tokio_util::bytes::Bytes;
 #[derive(Clone, Debug)]
 pub enum MpcNetError {
     Generic(String),
-    Protocol { err: String, party: u32 },
+    Protocol {
+        err: String,
+        party: u32,
+    },
     NotConnected,
+    BadInput {
+        err: &'static str,
+    },
+    BadInputLength {
+        err: &'static str,
+        expected: usize,
+        got: usize,
+    },
 }
 
 impl<T: ToString> From<T> for MpcNetError {
@@ -41,12 +52,6 @@ pub trait MpcNet: Send + Sync {
     fn party_id(&self) -> u32;
     /// Is the network layer initalized?
     fn is_init(&self) -> bool;
-    /// All parties send bytes to each other.
-    async fn broadcast_bytes(
-        &self,
-        bytes: &[u8],
-        sid: MultiplexedStreamID,
-    ) -> Result<Vec<Bytes>, MpcNetError>;
     /// All parties send bytes to the king. The king receives all the bytes
     async fn send_bytes_to_king(
         &self,
