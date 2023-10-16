@@ -70,7 +70,7 @@ pub trait MpcSerNet: MpcNet {
                 .map(|out| {
                     let mut bytes_out = Vec::new();
                     out.serialize_compressed(&mut bytes_out).unwrap();
-                    bytes_out
+                    bytes_out.into()
                 })
                 .collect()
         });

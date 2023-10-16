@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use auto_impl::auto_impl;
 pub use multi::LocalTestNet;
 use std::fmt::Debug;
+use tokio_util::bytes::Bytes;
 
 #[derive(Clone, Debug)]
 pub enum MpcNetError {
@@ -45,33 +46,32 @@ pub trait MpcNet: Send + Sync {
         &self,
         bytes: &[u8],
         sid: MultiplexedStreamID,
-    ) -> Result<Vec<Vec<u8>>, MpcNetError>;
-    /// All parties send bytes to the king.
+    ) -> Result<Vec<Bytes>, MpcNetError>;
+    /// All parties send bytes to the king. The king receives all the bytes
     async fn send_bytes_to_king(
         &self,
         bytes: &[u8],
         sid: MultiplexedStreamID,
-    ) -> Result<Option<Vec<Vec<u8>>>, MpcNetError>;
+    ) -> Result<Option<Vec<Bytes>>, MpcNetError>;
     /// All parties recv bytes from the king.
     /// Provide bytes iff you're the king!
     async fn recv_bytes_from_king(
         &self,
-        bytes: Option<Vec<Vec<u8>>>,
+        bytes: Option<Vec<Bytes>>,
         sid: MultiplexedStreamID,
-    ) -> Result<Vec<u8>, MpcNetError>;
+    ) -> Result<Bytes, MpcNetError>;
 
     /// Everyone sends bytes to the king, who receives those bytes, runs a computation on them, and
     /// redistributes the resulting bytes.
     ///
     /// The king's computation is given by a function, `f`
     /// proceeds.
-
     async fn king_compute(
         &self,
         bytes: &[u8],
         sid: MultiplexedStreamID,
-        f: impl Fn(Vec<Vec<u8>>) -> Vec<Vec<u8>> + Send,
-    ) -> Result<Vec<u8>, MpcNetError> {
+        f: impl Fn(Vec<Bytes>) -> Vec<Bytes> + Send,
+    ) -> Result<Bytes, MpcNetError> {
         let king_response = self.send_bytes_to_king(bytes, sid).await?.map(f);
         self.recv_bytes_from_king(king_response, sid).await
     }

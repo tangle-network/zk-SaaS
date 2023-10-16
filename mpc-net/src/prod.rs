@@ -228,7 +228,7 @@ impl MpcNet for ProdNet {
         &self,
         bytes: &[u8],
         sid: MultiplexedStreamID,
-    ) -> Result<Vec<Vec<u8>>, MpcNetError> {
+    ) -> Result<Vec<Bytes>, MpcNetError> {
         self.connections.broadcast_bytes(bytes, sid).await
     }
 
@@ -236,15 +236,15 @@ impl MpcNet for ProdNet {
         &self,
         bytes: &[u8],
         sid: MultiplexedStreamID,
-    ) -> Result<Option<Vec<Vec<u8>>>, MpcNetError> {
+    ) -> Result<Option<Vec<Bytes>>, MpcNetError> {
         self.connections.send_bytes_to_king(bytes, sid).await
     }
 
     async fn recv_bytes_from_king(
         &self,
-        bytes: Option<Vec<Vec<u8>>>,
+        bytes: Option<Vec<Bytes>>,
         sid: MultiplexedStreamID,
-    ) -> Result<Vec<u8>, MpcNetError> {
+    ) -> Result<Bytes, MpcNetError> {
         self.connections.recv_bytes_from_king(bytes, sid).await
     }
 }
@@ -280,8 +280,9 @@ async fn recv_packet(
 #[cfg(test)]
 mod test {
     use super::*;
-    use futures::stream::FuturesUnordered;
+    use futures::stream::{FuturesOrdered, FuturesUnordered};
     use futures::{TryFutureExt, TryStreamExt};
+    use std::future::Future;
     use tokio::net::TcpListener;
 
     use rcgen::{Certificate, RcgenError};
@@ -299,9 +300,89 @@ mod test {
         rcgen::generate_simple_self_signed(vec!["127.0.0.1".to_string()])
     }
 
+    struct LocalTestNetProd {
+        nodes: Vec<ProdNet>,
+    }
+
+    impl LocalTestNetProd {
+        pub async fn simulate_network_round<
+            F: Future<Output = K> + Send,
+            K: Send + Sync + 'static,
+        >(
+            self,
+            f: impl Fn(ProdNet) -> F + Send + Sync + Clone + 'static,
+        ) -> Vec<K> {
+            let mut futures = FuturesOrdered::new();
+            for connections in self.nodes.into_iter() {
+                let next_f = f.clone();
+                futures.push_back(Box::pin(async move {
+                    let task = async move { next_f(connections).await };
+                    let handle = tokio::task::spawn(task);
+                    handle.await.unwrap()
+                }));
+            }
+            futures.collect().await
+        }
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn test_network_init() {
+        let _ = init_network(3).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_exchange_of_data_sum_all_ids() {
         const N_PEERS: usize = 4;
+        let nodes = init_network(N_PEERS).await;
+        let testnet = LocalTestNetProd { nodes };
+        let expected_result: u32 =
+            (0..=N_PEERS).into_iter().map(|r| r as u32).sum();
+
+        let sums = testnet
+            .simulate_network_round(|net| async move {
+                let my_id = net.party_id();
+                let bytes = bincode2::serialize(&my_id).unwrap();
+                if let Some(king_recv) = net
+                    .send_bytes_to_king(&bytes, MultiplexedStreamID::Zero)
+                    .await
+                    .unwrap()
+                {
+                    assert_eq!(my_id, 0);
+                    // convert each bytes into a u32, and sum
+                    let mut sum = 0;
+                    for bytes in king_recv {
+                        let id: u32 = bincode2::deserialize(&bytes).unwrap();
+                        sum += id;
+                    }
+                    // now, send the sum to each of the clients
+                    let bytes = bincode2::serialize(&sum).unwrap();
+                    let send = (0..(N_PEERS + 1))
+                        .map(|_| bytes.clone().into())
+                        .collect::<Vec<Bytes>>();
+                    net.recv_bytes_from_king(
+                        Some(send),
+                        MultiplexedStreamID::Zero,
+                    )
+                    .await
+                    .unwrap();
+                    sum
+                } else {
+                    assert_ne!(my_id, 0);
+                    let bytes = net
+                        .recv_bytes_from_king(None, MultiplexedStreamID::Zero)
+                        .await
+                        .unwrap();
+                    let sum: u32 = bincode2::deserialize(&bytes).unwrap();
+                    sum
+                }
+            })
+            .await;
+
+        // Assert all values are the same inside the sums vector
+        assert!(sums.iter().all(|sum| *sum == expected_result));
+    }
+
+    async fn init_network(n_peers: usize) -> Vec<ProdNet> {
         let king_addr = TcpListener::bind("127.0.0.1:0")
             .await
             .unwrap()
@@ -320,7 +401,7 @@ mod test {
 
         let mut client_certs = RootCertStore::empty();
         let mut client_identities = Vec::new();
-        for _ in 0..N_PEERS {
+        for _ in 0..n_peers {
             let peer_identity = generate_self_signed_cert().unwrap();
             let peer_identity = RustlsCertificate {
                 cert: rustls::Certificate(
@@ -343,7 +424,7 @@ mod test {
         let peers = FuturesUnordered::new();
         for (i, identity) in client_identities.into_iter().enumerate() {
             let peer = ProdNet::new_peer(
-                i as u32,
+                (i + 1) as u32,
                 king_addr,
                 identity,
                 server_cert.clone(),
@@ -353,7 +434,8 @@ mod test {
 
         let peers = peers.try_collect::<Vec<_>>();
 
-        let (r_server, _) = tokio::try_join!(king, peers).unwrap();
-        r_server.unwrap();
+        let (r_server, mut r_clients) = tokio::try_join!(king, peers).unwrap();
+        r_clients.push(r_server.unwrap());
+        r_clients
     }
 }
