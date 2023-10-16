@@ -235,9 +235,10 @@ impl<IO: AsyncRead + AsyncWrite + Unpin + Send> MpcNetConnection<IO> {
         let r = if self.is_king() {
             let mut r = FuturesOrdered::new();
             let bytes_king = bytes_out.clone();
-            r.push_back(Box::pin(async move {
-                Ok(bytes_king)
-            }) as Pin<Box<dyn Future<Output=Result<Bytes, MpcNetError>> + Send>>);
+            r.push_back(Box::pin(async move { Ok(bytes_king) })
+                as Pin<
+                    Box<dyn Future<Output = Result<Bytes, MpcNetError>> + Send>,
+                >);
 
             for (id, peer) in self.peers.iter() {
                 let bytes_out: Bytes = bytes_out.clone();
