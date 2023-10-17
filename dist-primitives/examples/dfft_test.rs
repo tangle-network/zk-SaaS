@@ -80,7 +80,7 @@ pub async fn main() {
     env_logger::builder().format_timestamp(None).init();
     let network = Net::new_local_testnet(8).await.unwrap();
     network
-        .simulate_network_round(|mut net| async move {
+        .simulate_network_round((), |mut net, _| async move {
             let pp = PackedSharingParams::<Fr>::new(2);
             let dom = Radix2EvaluationDomain::<Fr>::new(1024).unwrap();
             d_fft_test::<Fr, _>(&pp, &dom, &mut net).await;

@@ -127,14 +127,14 @@ mod tests {
 
         println!("net init done");
 
-        net.simulate_network_round(|mut net| async move {
+        net.simulate_network_round((), |net, _| async move {
             let pp = PackedSharingParams::<F>::new(L);
             let rng = &mut ark_std::test_rng();
             let secrets: [G1P; L] = UniformRand::rand(rng);
             let secrets = secrets.to_vec();
 
             let shares = packexp_from_public(&secrets, &pp);
-            let result = unpackexp(shares, false, &pp, &mut net);
+            let result = unpackexp(shares, false, &pp, &net);
             assert_eq!(secrets, result);
         })
         .await;
@@ -144,7 +144,7 @@ mod tests {
     async fn pack_unpack2_test() {
         let net = LocalTestNet::new_local_testnet(4).await.unwrap();
 
-        net.simulate_network_round(|mut net| async move {
+        net.simulate_network_round((), |net, _| async move {
             let pp = PackedSharingParams::<F>::new(L);
             let rng = &mut ark_std::test_rng();
 
@@ -182,8 +182,7 @@ mod tests {
                 > = gshares[i].iter().map(|s| (*s).into()).collect();
                 result[i] = G1P::msm(&temp_aff, &fshares[i]).unwrap();
             }
-            let result: G1P =
-                unpackexp(result, true, &pp, &mut net).iter().sum();
+            let result: G1P = unpackexp(result, true, &pp, &net).iter().sum();
             assert_eq!(expected, result);
         })
         .await;

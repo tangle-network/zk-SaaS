@@ -410,20 +410,27 @@ impl LocalTestNet {
         Ok(Self { nodes })
     }
 
-    // For each node, run a function (a Future) provided by the parameter that accepts the node's Connection.
-    // Then, run all these futures in a FuturesOrdered.
+    /// For each node, run a function (a Future) provided by the parameter that accepts the node's Connection.
+    /// Then, run all these futures in a FuturesOrdered.
+    ///
+    /// The provided `user_data` of type U is then given to each of these futures, by cloning it.
+    /// So if you have a struct that you want to pass to each of these futures, you can do that.
     pub async fn simulate_network_round<
         F: Future<Output = K> + Send,
         K: Send + Sync + 'static,
+        U: Clone + Send + Sync + 'static,
     >(
         self,
-        f: impl Fn(Connections) -> F + Send + Sync + Clone + 'static,
+        user_data: U,
+        f: impl Fn(Connections, U) -> F + Send + Sync + Clone + 'static,
     ) -> Vec<K> {
         let mut futures = FuturesOrdered::new();
         for (_, connections) in self.nodes.into_iter() {
             let next_f = f.clone();
+            let next_user_data = user_data.clone();
             futures.push_back(Box::pin(async move {
-                let task = async move { next_f(connections).await };
+                let task =
+                    async move { next_f(connections, next_user_data).await };
                 let handle = tokio::task::spawn(task);
                 handle.await.unwrap()
             }));

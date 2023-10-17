@@ -34,7 +34,7 @@ pub async fn d_msm_test<G: CurveGroup, Net: MpcNet>(
 
     let x_share: Vec<G> = x_pub
         .chunks(pp.l)
-        .map(|s| packexp_from_public(&s.to_vec(), pp)[net.party_id() as usize])
+        .map(|s| packexp_from_public(s, pp)[net.party_id() as usize])
         .collect();
 
     let y_share: Vec<G::ScalarField> = y_pub
@@ -76,7 +76,7 @@ async fn main() {
     let network = Net::new_local_testnet(8).await.unwrap();
 
     network
-        .simulate_network_round(|mut net| async move {
+        .simulate_network_round((), |mut net, _| async move {
             let pp = PackedSharingParams::<Fr>::new(2);
             let dom = Radix2EvaluationDomain::<Fr>::new(32768).unwrap();
             d_msm_test::<ark_bls12_377::G1Projective, _>(&pp, &dom, &mut net)

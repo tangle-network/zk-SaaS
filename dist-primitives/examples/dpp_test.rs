@@ -62,7 +62,7 @@ async fn main() {
 
     let network = Net::new_local_testnet(4).await.unwrap();
     network
-        .simulate_network_round(|mut net| async move {
+        .simulate_network_round((), |mut net, _| async move {
             let pp = PackedSharingParams::<Fr>::new(2);
             let cd = Radix2EvaluationDomain::<Fr>::new(1 << 15).unwrap();
             d_pp_test::<Fr, _>(&pp, &cd, &mut net).await;

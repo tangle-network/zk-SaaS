@@ -43,7 +43,7 @@ async fn main() {
     let network = Net::new_local_testnet(4).await.unwrap();
 
     network
-        .simulate_network_round(|mut net| async move {
+        .simulate_network_round((), |mut net, _| async move {
             let pp = PackedSharingParams::<Fr>::new(2);
             for i in 10..20 {
                 let dom = Radix2EvaluationDomain::<Fr>::new(1 << i).unwrap();

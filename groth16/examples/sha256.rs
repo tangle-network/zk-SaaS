@@ -1,6 +1,12 @@
-use ark_ec::{bls12::Bls12, pairing::Pairing};
+use std::sync::Arc;
+
+use ark_bn254::{Bn254, Fr as Bn254Fr};
+use ark_circom::{CircomBuilder, CircomConfig, CircomReduction};
+use ark_crypto_primitives::snark::SNARK;
+use ark_ec::pairing::Pairing;
 use ark_ff::UniformRand;
 
+use ark_groth16::Groth16;
 use ark_std::{end_timer, start_timer};
 use dist_primitives::dmsm;
 use log::debug;
@@ -8,16 +14,14 @@ use mpc_net::{LocalTestNet as Net, MpcNet, MultiplexedStreamID};
 
 use secret_sharing::pss::PackedSharingParams;
 
-type BlsE = Bls12<ark_bls12_377::Config>;
-type BlsFr = <Bls12<ark_bls12_377::Config> as Pairing>::ScalarField;
-
 use groth16::{
     ext_wit::groth_ext_wit, proving_key::PackedProvingKeyShare,
     ConstraintDomain,
 };
 
-async fn dgroth<E: Pairing, Net: MpcNet>(
+async fn dsha256<E: Pairing, Net: MpcNet>(
     pp: &PackedSharingParams<E::ScalarField>,
+    crs_share: &PackedProvingKeyShare<E>,
     cd: &ConstraintDomain<E::ScalarField>,
     net: &mut Net,
 ) {
@@ -47,8 +51,7 @@ async fn dgroth<E: Pairing, Net: MpcNet>(
     // Done
 
     let rng = &mut ark_std::test_rng();
-    let crs_share: PackedProvingKeyShare<E> =
-        PackedProvingKeyShare::<E>::rand(rng, cd.m, pp);
+
     let a_share: Vec<E::ScalarField> =
         vec![E::ScalarField::rand(rng); crs_share.s.len()];
 
@@ -104,13 +107,35 @@ async fn dgroth<E: Pairing, Net: MpcNet>(
 async fn main() {
     env_logger::builder().format_timestamp(None).init();
 
-    let network = Net::new_local_testnet(8).await.unwrap();
+    let n = 8;
+    let cfg = CircomConfig::<Bn254>::new(
+        "../fixtures/sha256/sha256_js/sha256.wasm",
+        "../fixtures/sha256/sha256.r1cs",
+    )
+    .unwrap();
+    let builder = CircomBuilder::new(cfg);
+    let circom = builder.setup();
+    let rng = &mut ark_std::rand::thread_rng();
+    let (pk, _vk) =
+        Groth16::<Bn254, CircomReduction>::circuit_specific_setup(circom, rng)
+            .unwrap();
+    let pp_g1 = PackedSharingParams::new(2);
+    let pp_g2 = PackedSharingParams::new(2);
+    let crs_shares =
+        PackedProvingKeyShare::<Bn254>::pack_from_arkworks_proving_key(
+            &pk, n, pp_g1, pp_g2,
+        );
+    let crs_shares = Arc::new(crs_shares);
+    let network = Net::new_local_testnet(n).await.unwrap();
 
     network
-        .simulate_network_round((), |mut net, _| async move {
-            let pp = PackedSharingParams::<BlsFr>::new(2);
-            let cd = ConstraintDomain::<BlsFr>::new(32768);
-            dgroth::<BlsE, _>(&pp, &cd, &mut net).await;
+        .simulate_network_round(crs_shares, |mut net, crs_shares| async move {
+            let pp = PackedSharingParams::<Bn254Fr>::new(2);
+            let cd = ConstraintDomain::<Bn254Fr>::new(32768);
+            log::debug!("Running for party: {}", net.party_id());
+            let crs_share = crs_shares.get(net.party_id() as usize).unwrap();
+
+            dsha256(&pp, crs_share, &cd, &mut net).await;
         })
         .await;
 }
