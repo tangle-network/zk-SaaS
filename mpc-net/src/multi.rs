@@ -41,14 +41,40 @@ pub struct Connections {
 }
 
 impl Connections {
-    async fn connect_to_all(&mut self) {
+    /// Given a path and the `id` of oneself, initialize the structure
+    pub async fn init_from_path(&mut self, path: &str, id: usize) {
+        let f = tokio::fs::read_to_string(path)
+            .await
+            .unwrap_or_else(|e| panic!("Could not read file {}: {}", path, e));
+        for (peer_id, line) in f.lines().enumerate() {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() {
+                let addr: SocketAddr = trimmed.parse().unwrap_or_else(|e| {
+                    panic!("bad socket address: {}:\n{}", trimmed, e)
+                });
+                let peer = Peer {
+                    id: peer_id,
+                    addr,
+                    stream: None,
+                };
+                self.peers.insert(peer_id, peer);
+
+                if peer_id == id {
+                    self.listener = Some(TcpListener::bind(addr).await.unwrap());
+                }
+            }
+        }
+        assert!(id < self.peers.len());
+        self.id = id;
+    }
+    pub async fn connect_to_all(&mut self) {
         let timer = start_timer!(|| "Connecting");
         let n_minus_1 = self.n_parties() - 1;
         let my_id = self.id;
 
         let peer_addrs = self.peers.iter().map(|p| (p.1.addr, *p.0)).collect::<HashMap<_, _>>();
         let peer_addrs_reversed = peer_addrs.clone().into_iter().map(|r| (r.1, r.0)).collect::<HashMap<_, _>>();
-
+        println!("Peer addrs: {:?}", peer_addrs_reversed);
         let listener = self.listener.take().unwrap();
         let new_peers = Arc::new(Mutex::new(self.peers.clone()));
         let new_peers_server = new_peers.clone();
@@ -60,35 +86,32 @@ impl Connections {
         // outbound_connections_i_will_make = 1
         // my_id = 2, n_minus_1 = 2
         // outbound_connections_i_will_make = 0
-        let outbound_connections_i_will_make = n_minus_1 - my_id;
-        let inbound_connections_i_will_make = my_id;
+        let outbound_connections_i_will_make = 1; // to the king
+        let inbound_connections_i_will_make = n_minus_1; // for the king
 
         let server_task = async move {
-            for _ in 0..inbound_connections_i_will_make {
-                let (stream, peer_addr) = listener.accept().await.unwrap();
-                println!("{my_id} accepted connection from {peer_addr}");
-                println!("Peer addrs: {:?}", peer_addrs);
-                let peer_id = peer_addrs.get(&peer_addr).copied().unwrap();
-                new_peers_server.lock().get_mut(&peer_id).unwrap().stream = Some(stream);
-                println!("{my_id} connected to peer {peer_id}")
+            if my_id == 0 {
+                for idx in 0..inbound_connections_i_will_make {
+                    let (mut stream, peer_addr) = listener.accept().await.unwrap();
+                    println!("{my_id} accepted connection from {peer_addr}");
+                    let peer_id = stream.read_u32().await.unwrap() as usize;
+                    new_peers_server.lock().get_mut(&peer_id).unwrap().stream = Some(stream);
+                    println!("{my_id} connected to peer {peer_id} | {} conns left", inbound_connections_i_will_make - idx)
+                }
             }
         };
 
         let client_task = async move {
-            // Wait some time for the server tasks to boot up
-            tokio::time::sleep(Duration::from_millis(200)).await;
-            // Listeners are all active, now, connect us to n-1 peers
-            let mut conns_made = 0;
-            for _ in 0..outbound_connections_i_will_make {
-                // If I am 0, I will connect to 1 and 2
-                // If I am 1, I will connect to 2
-                // If I am 2, I will connect to no one (server will make the connections)
-                let next_peer_to_connect_to = my_id + conns_made + 1;
+            if my_id != 0 {
+                // Wait some time for the server tasks to boot up
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                // Listeners are all active, now, connect us to the king
+                let next_peer_to_connect_to = 0;
+                println!("Will next try to connect to peer {}", next_peer_to_connect_to);
                 let peer_addr = peer_addrs_reversed.get(&next_peer_to_connect_to).unwrap();
-                let stream = TcpStream::connect(peer_addr).await.unwrap();
+                let mut stream = TcpStream::connect(peer_addr).await.unwrap();
+                stream.write_u32(my_id as u32).await.unwrap();
                 new_peers_client.lock().get_mut(&next_peer_to_connect_to).unwrap().stream = Some(stream);
-                conns_made += 1;
-                println!("{my_id} connected to peer {next_peer_to_connect_to}")
             }
         };
 
@@ -103,7 +126,12 @@ impl Connections {
         let from_all = self.send_to_king(&[self.id as u8]).await;
         self.recv_from_king(from_all).await;
         for peer in &self.peers {
-            assert!(peer.1.stream.is_some());
+            if *peer.0 != my_id {
+                if self.is_king() {
+                    println!("Peer {} status: {}", peer.0, peer.1.stream.is_some());
+                    assert!(peer.1.stream.is_some());
+                }
+            }
         }
 
         end_timer!(timer);
@@ -303,8 +331,7 @@ impl LocalTestNet {
 #[async_trait]
 impl MpcNet for Connections {
     fn n_parties(&self) -> usize {
-        // We do not include ourself in the peers list, so add 1
-        self.peers.len() + 1
+        self.peers.len()
     }
 
     fn party_id(&self) -> usize {
