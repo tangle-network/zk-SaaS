@@ -430,6 +430,7 @@ mod test {
                 king_addr,
                 identity,
                 server_cert.clone(),
+                n_peers + 1,
             );
             peers.push(Box::pin(peer));
         }
