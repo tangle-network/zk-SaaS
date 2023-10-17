@@ -46,7 +46,7 @@ struct Opt {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn Error>> {
     let opts: Opt = Opt::from_args();
     let n_parties = opts.n_parties;
     let my_id = opts.id;
@@ -58,8 +58,7 @@ async fn main() {
     };
 
     // Run the network
-    let expected_sum_result =
-        (0..=opts.n_parties).map(|r| r as u32).sum::<u32>();
+    let expected_sum_result = (0..=n_parties).map(|r| r as u32).sum::<u32>();
 
     let bytes = bincode2::serialize(&my_id).unwrap();
     let sum = if let Some(king_recv) = net
@@ -94,6 +93,7 @@ async fn main() {
     };
 
     assert_eq!(sum, expected_sum_result);
+    Ok(())
 }
 
 async fn load_king(opts: Opt) -> Result<ProdNet, Box<dyn Error>> {
@@ -131,7 +131,7 @@ async fn load_king(opts: Opt) -> Result<ProdNet, Box<dyn Error>> {
         private_key: private_key_king,
     };
 
-    ProdNet::new_king(opts.bind_addr, identity, client_certs)
+    ProdNet::new_king(opts.bind_addr.unwrap(), identity, client_certs)
         .await
         .map_err(|err| format!("Error creating king: {err:?}").into())
 }
@@ -159,7 +159,7 @@ async fn load_client(opts: Opt) -> Result<ProdNet, Box<dyn Error>> {
         private_key: private_key_client,
     };
 
-    ProdNet::new_peer(opts.id, king_addr, identity, king_store)
+    ProdNet::new_peer(opts.id, king_addr, identity, king_store, opts.n_parties)
         .await
         .map_err(|err| format!("Error creating client: {err:?}").into())
 }
@@ -191,12 +191,15 @@ fn load_private_key(path: &PathBuf) -> Result<PrivateKey, Box<dyn Error>> {
     let mut keys = rustls_pemfile::pkcs8_private_keys(&mut reader)?;
 
     match keys.len() {
-        0 => {
-            Err(format!("No PKCS8-encoded private key found in {path}").into())
-        }
+        0 => Err(format!(
+            "No PKCS8-encoded private key found in {}",
+            path.display()
+        )
+        .into()),
         1 => Ok(PrivateKey(keys.remove(0))),
         _ => Err(format!(
-            "More than one PKCS8-encoded private key found in {path}"
+            "More than one PKCS8-encoded private key found in {}",
+            path.display()
         )
         .into()),
     }

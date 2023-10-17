@@ -60,11 +60,11 @@ pub async fn d_fft_test<F: FftField + PrimeField, Net: MpcNet>(
         .map(|peval_shares| {
             let peval_shares = transpose(peval_shares);
 
-            let mut pevals: Vec<F> = peval_shares
+            let pevals: Vec<F> = peval_shares
                 .into_iter()
                 .flat_map(|x| pp.unpack(x))
+                .rev()
                 .collect();
-            pevals.reverse(); // todo: implement such that we avoid this reverse
 
             if net.is_king() {
                 assert_eq!(should_be_output, pevals);

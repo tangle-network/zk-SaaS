@@ -452,3 +452,63 @@ async fn recv_stream<T: AsyncRead + AsyncWrite + Unpin>(
         Err(MpcNetError::Generic("Stream is None".to_string()))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::multi::{recv_stream, send_stream};
+    use crate::{LocalTestNet, MultiplexedStreamID};
+    use std::collections::HashMap;
+
+    #[tokio::test]
+    async fn test_multiplexing() {
+        const N_PARTIES: usize = 4;
+        let testnet = LocalTestNet::new_local_testnet(N_PARTIES).await.unwrap();
+        let expected_sum = (0..4).sum::<u32>();
+
+        testnet
+            .simulate_network_round(move |conn| async move {
+                let sids = [
+                    MultiplexedStreamID::Zero,
+                    MultiplexedStreamID::One,
+                    MultiplexedStreamID::Two,
+                ];
+                // Broadcast our ID to everyone
+                let my_id = conn.id;
+                for peer in &mut conn.peers.values() {
+                    if peer.id == my_id {
+                        continue;
+                    }
+                    for sid in sids {
+                        send_stream(
+                            peer.streams.as_ref(),
+                            vec![my_id as u8].into(),
+                            sid,
+                        )
+                        .await
+                        .unwrap();
+                    }
+                }
+
+                // Receive everyone else's ID
+                let mut ids = HashMap::<_, Vec<u32>>::new();
+                for peer in &mut conn.peers.values() {
+                    if peer.id == my_id {
+                        continue;
+                    }
+                    for sid in sids {
+                        let recv_bytes =
+                            recv_stream(peer.streams.as_ref(), sid)
+                                .await
+                                .unwrap();
+                        let decoded = recv_bytes[0] as u32;
+                        ids.entry(sid).or_default().push(decoded);
+                    }
+                }
+
+                for (_sid, ids) in ids {
+                    assert_eq!(expected_sum, ids.iter().sum::<u32>() + my_id);
+                }
+            })
+            .await;
+    }
+}
