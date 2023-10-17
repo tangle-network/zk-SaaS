@@ -285,6 +285,7 @@ mod test {
     use futures::stream::{FuturesOrdered, FuturesUnordered};
     use futures::{TryFutureExt, TryStreamExt};
     use std::future::Future;
+    use std::time::Duration;
     use tokio::net::TcpListener;
 
     use rcgen::{Certificate, RcgenError};
@@ -380,6 +381,7 @@ mod test {
             })
             .await;
 
+        tokio::time::sleep(Duration::from_millis(500)).await;
         // Assert all values are the same inside the sums vector
         assert!(sums.iter().all(|sum| *sum == expected_result));
     }

@@ -4,6 +4,7 @@ use mpc_net::{MpcNet, MultiplexedStreamID};
 use rustls::{Certificate, PrivateKey, RootCertStore};
 use std::error::Error;
 use std::path::PathBuf;
+use std::time::Duration;
 use structopt::StructOpt;
 use tokio_util::bytes::Bytes;
 
@@ -93,6 +94,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let sum: u32 = bincode2::deserialize(&bytes).unwrap();
         sum
     };
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
     assert_eq!(sum, expected_sum_result);
     Ok(())
