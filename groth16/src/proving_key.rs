@@ -46,8 +46,6 @@ where
         assert!(pp_g1.l == pp_g2.l);
         assert!(pp_g1.n == pp_g2.n);
 
-        let mut packed_proving_key_shares = Vec::with_capacity(n_parties);
-
         let pre_packed_s = cfg_into_iter!(pk.a_query.clone())
             .map(Into::into)
             .collect::<Vec<_>>();
@@ -80,30 +78,33 @@ where
             .map(|chunk| packexp_from_public::<E::G2>(chunk, &pp_g2))
             .collect::<Vec<_>>();
 
-        for i in 0..n_parties {
-            let mut s_shares = Vec::with_capacity(packed_s.len());
-            let mut u_shares = Vec::with_capacity(packed_u.len());
-            let mut v_shares = Vec::with_capacity(packed_v.len());
-            let mut w_shares = Vec::with_capacity(packed_w.len());
-            let mut h_shares = Vec::with_capacity(packed_h.len());
+        cfg_into_iter!(0..n_parties)
+            .map(|i| {
+                let s_shares = cfg_into_iter!(0..packed_s.len())
+                    .map(|j| packed_s[j][i].into())
+                    .collect::<Vec<_>>();
+                let u_shares = cfg_into_iter!(0..packed_u.len())
+                    .map(|j| packed_u[j][i].into())
+                    .collect::<Vec<_>>();
+                let v_shares = cfg_into_iter!(0..packed_v.len())
+                    .map(|j| packed_v[j][i].into())
+                    .collect::<Vec<_>>();
+                let w_shares = cfg_into_iter!(0..packed_w.len())
+                    .map(|j| packed_w[j][i].into())
+                    .collect::<Vec<_>>();
+                let h_shares = cfg_into_iter!(0..packed_h.len())
+                    .map(|j| packed_h[j][i].into())
+                    .collect::<Vec<_>>();
 
-            for j in 0..packed_s.len() {
-                s_shares.push(packed_s[j][i].into());
-                u_shares.push(packed_u[j][i].into());
-                v_shares.push(packed_v[j][i].into());
-                w_shares.push(packed_w[j][i].into());
-                h_shares.push(packed_h[j][i].into());
-            }
-
-            packed_proving_key_shares.push(PackedProvingKeyShare::<E> {
-                s: s_shares,
-                u: u_shares,
-                v: v_shares,
-                w: w_shares,
-                h: h_shares,
-            });
-        }
-        packed_proving_key_shares
+                PackedProvingKeyShare::<E> {
+                    s: s_shares,
+                    u: u_shares,
+                    v: v_shares,
+                    w: w_shares,
+                    h: h_shares,
+                }
+            })
+            .collect()
     }
 
     pub fn rand<R: Rng>(
@@ -175,6 +176,11 @@ mod tests {
 
     #[test]
     fn packed_pk_from_arkworks_pk() {
+        let _ = env_logger::builder()
+            .format_timestamp(None)
+            .format_module_path(false)
+            .is_test(true)
+            .try_init();
         let cfg = CircomConfig::<Bn254>::new(
             "../fixtures/sha256/sha256_js/sha256.wasm",
             "../fixtures/sha256/sha256.r1cs",
