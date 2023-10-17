@@ -85,7 +85,7 @@ jobs:
           args: --release --example ${{ matrix.example }}
 
   prod_net_integration_test:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v2
       - name: Setup Rust
