@@ -1,6 +1,6 @@
-set -ex
 trap "exit" INT TERM
 trap "kill 0" EXIT
+set -ex
 
 cargo build --example dpp_test
 BIN=../target/debug/examples/dpp_test
@@ -33,7 +33,7 @@ do
   
   for pid in ${PROCS[@]}
   do
-    wait $pid
+    wait $pid || exit 1
   done
 done
 

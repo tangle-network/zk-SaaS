@@ -103,7 +103,7 @@ mod tests {
 
     use ark_bls12_377::G1Affine;
     use ark_bls12_377::G1Projective as G1P;
-    use mpc_net::{MpcMultiNet, MpcNet};
+    use mpc_net::LocalTestNet;
 
     type F = <ark_ec::short_weierstrass::Projective<
         <ark_bls12_377::Config as Bls12Config>::G1Config,
@@ -120,64 +120,67 @@ mod tests {
 
     #[tokio::test]
     async fn pack_unpack_test() {
-        let mut net = MpcMultiNet::new_local_testnet(4).await.unwrap();
-        net.init().await;
+        println!("pack_unpack_test");
+        let mut net = LocalTestNet::new_local_testnet(4).await.unwrap();
 
-        let pp = PackedSharingParams::<F>::new(L);
-        let rng = &mut ark_std::test_rng();
-        let secrets: [G1P; L] = UniformRand::rand(rng);
-        let secrets = secrets.to_vec();
+        println!("net init done");
 
-        let shares = packexp_from_public(&secrets, &pp);
-        let result = unpackexp(shares, false, &pp, &mut net);
+        net.simulate_network_round(|net| async move {
+            let pp = PackedSharingParams::<F>::new(L);
+            let rng = &mut ark_std::test_rng();
+            let secrets: [G1P; L] = UniformRand::rand(rng);
+            let secrets = secrets.to_vec();
 
-        assert_eq!(secrets, result);
+            let shares = packexp_from_public(&secrets, &pp);
+            let result= unpackexp(shares, false, &pp, net);
+            assert_eq!(secrets, result);
+        }).await;
     }
 
     #[tokio::test]
     async fn pack_unpack2_test() {
-        let mut net = MpcMultiNet::new_local_testnet(4).await.unwrap();
-        net.init().await;
+        let mut net = LocalTestNet::new_local_testnet(4).await.unwrap();
 
-        let pp = PackedSharingParams::<F>::new(L);
-        let rng = &mut ark_std::test_rng();
+        net.simulate_network_round(|net| async move {
+            let pp = PackedSharingParams::<F>::new(L);
+            let rng = &mut ark_std::test_rng();
 
-        let gsecrets: [G1P; M] = [G1P::rand(rng); M];
-        let gsecrets = gsecrets.to_vec();
+            let gsecrets: [G1P; M] = [G1P::rand(rng); M];
+            let gsecrets = gsecrets.to_vec();
 
-        let fsecrets: [F; M] = [F::from(1 as u32); M];
-        let fsecrets = fsecrets.to_vec();
+            let fsecrets: [F; M] = [F::from(1 as u32); M];
+            let fsecrets = fsecrets.to_vec();
 
-        ///////////////////////////////////////
-        let gsecrets_aff: Vec<G1Affine> =
-            gsecrets.iter().map(|s| s.clone().into()).collect();
-        let expected = G1P::msm(&gsecrets_aff, &fsecrets).unwrap();
-        ///////////////////////////////////////
-        let gshares: Vec<Vec<G1P>> = gsecrets
-            .chunks(L)
-            .map(|s| packexp_from_public(&s.to_vec(), &pp))
-            .collect();
+            ///////////////////////////////////////
+            let gsecrets_aff: Vec<G1Affine> =
+                gsecrets.iter().map(|s| s.clone().into()).collect();
+            let expected = G1P::msm(&gsecrets_aff, &fsecrets).unwrap();
+            ///////////////////////////////////////
+            let gshares: Vec<Vec<G1P>> = gsecrets
+                .chunks(L)
+                .map(|s| packexp_from_public(&s.to_vec(), &pp))
+                .collect();
 
-        let fshares: Vec<Vec<F>> = fsecrets
-            .chunks(L)
-            .map(|s| pp.pack_from_public(s.to_vec()))
-            .collect();
+            let fshares: Vec<Vec<F>> = fsecrets
+                .chunks(L)
+                .map(|s| pp.pack_from_public(s.to_vec()))
+                .collect();
 
-        let gshares = transpose(gshares);
-        let fshares = transpose(fshares);
+            let gshares = transpose(gshares);
+            let fshares = transpose(fshares);
 
-        let mut result = vec![G1P::zero(); N];
+            let mut result = vec![G1P::zero(); N];
 
-        for i in 0..N {
-            let temp_aff: Vec<
-                <ark_ec::short_weierstrass::Projective<
-                    <ark_bls12_377::Config as Bls12Config>::G1Config,
-                > as CurveGroup>::Affine,
-            > = gshares[i].iter().map(|s| s.clone().into()).collect();
-            result[i] = G1P::msm(&temp_aff, &fshares[i]).unwrap();
-        }
-
-        let result: G1P = unpackexp(result, true, &pp, &mut net).iter().sum();
-        assert_eq!(expected, result);
+            for i in 0..N {
+                let temp_aff: Vec<
+                    <ark_ec::short_weierstrass::Projective<
+                        <ark_bls12_377::Config as Bls12Config>::G1Config,
+                    > as CurveGroup>::Affine,
+                > = gshares[i].iter().map(|s| s.clone().into()).collect();
+                result[i] = G1P::msm(&temp_aff, &fshares[i]).unwrap();
+            }
+            let result: G1P = unpackexp(result, true, &pp, net).iter().sum();
+            assert_eq!(expected, result);
+        }).await;
     }
 }

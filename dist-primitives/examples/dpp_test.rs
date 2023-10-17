@@ -1,3 +1,4 @@
+use std::time::Duration;
 use ark_bls12_377::Fr;
 use ark_ff::{FftField, PrimeField};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
@@ -7,9 +8,10 @@ use dist_primitives::{
     utils::pack::{pack_vec, transpose},
     Opt,
 };
-use mpc_net::{MpcMultiNet as Net, MpcNet};
+use mpc_net::{LocalTestNet as Net, MpcNet};
 use secret_sharing::pss::PackedSharingParams;
 use structopt::StructOpt;
+use mpc_net::multi::Connections;
 
 pub async fn d_pp_test<F: FftField + PrimeField, Net: MpcNet>(
     pp: &PackedSharingParams<F>,
@@ -52,14 +54,15 @@ async fn main() {
     env_logger::builder().format_timestamp(None).init();
     let opt = Opt::from_args();
 
-    let mut network = Net::new_from_path(opt.input.to_str().unwrap(), opt.id)
-        .await
-        .unwrap();
-    network.init().await;
+    let mut connection = Connections::default();
+    connection.init_from_path(opt.input.to_str().unwrap(), opt.id)
+        .await;
+    tokio::time::sleep(Duration::from_millis(1000)).await;
+    connection.connect_to_all().await;
 
     let pp = PackedSharingParams::<Fr>::new(opt.l);
     let cd = Radix2EvaluationDomain::<Fr>::new(opt.m).unwrap();
-    d_pp_test::<ark_bls12_377::Fr, _>(&pp, &cd, &mut network).await;
+    d_pp_test::<ark_bls12_377::Fr, _>(&pp, &cd, &mut connection).await;
 
-    network.deinit();
+    connection.deinit();
 }

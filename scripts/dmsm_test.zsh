@@ -1,4 +1,3 @@
-set -ex
 trap "exit" INT TERM
 trap "kill 0" EXIT
 

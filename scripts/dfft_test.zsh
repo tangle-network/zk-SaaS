@@ -33,7 +33,7 @@ do
   
   for pid in ${PROCS[@]}
   do
-    wait $pid
+    wait $pid || exit 1
   done
 done
 
