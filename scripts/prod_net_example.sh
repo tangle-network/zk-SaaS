@@ -1,6 +1,4 @@
 #!/bin/bash
-trap "exit" INT TERM
-trap "kill 0" EXIT
 set -ex
 echo "Generating certificates..."
 n=5 # number of key/cert pairs to generate
@@ -42,7 +40,7 @@ do
 
   for pid in ${PROCS[@]}
   do
-    wait $pid
+    wait $pid || { echo "Process $pid exited with an error status"; exit 1; }
   done
 done
 
