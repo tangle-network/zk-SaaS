@@ -4,9 +4,9 @@ use ark_bn254::{Bn254, Fr as Bn254Fr};
 use ark_circom::{CircomBuilder, CircomConfig, CircomReduction};
 use ark_crypto_primitives::snark::SNARK;
 use ark_ec::pairing::Pairing;
-use ark_ff::UniformRand;
-
 use ark_groth16::Groth16;
+use ark_poly::Radix2EvaluationDomain;
+use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem};
 use ark_std::{end_timer, start_timer};
 use dist_primitives::dmsm;
 use log::debug;
@@ -15,13 +15,17 @@ use mpc_net::{LocalTestNet as Net, MpcNet, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
 
 use groth16::{
-    ext_wit::groth_ext_wit, proving_key::PackedProvingKeyShare,
-    ConstraintDomain,
+    ext_wit::d_ext_wit, proving_key::PackedProvingKeyShare, ConstraintDomain,
 };
 
 async fn dsha256<E: Pairing, Net: MpcNet>(
     pp: &PackedSharingParams<E::ScalarField>,
     crs_share: &PackedProvingKeyShare<E>,
+    qap: groth16::qap::QAP<
+        E::ScalarField,
+        Radix2EvaluationDomain<E::ScalarField>,
+    >,
+    a_share: &[E::ScalarField],
     cd: &ConstraintDomain<E::ScalarField>,
     net: &mut Net,
 ) {
@@ -52,11 +56,10 @@ async fn dsha256<E: Pairing, Net: MpcNet>(
 
     let rng = &mut ark_std::test_rng();
 
-    let a_share: Vec<E::ScalarField> =
-        vec![E::ScalarField::rand(rng); crs_share.s.len()];
-
     let h_share: Vec<E::ScalarField> =
-        groth_ext_wit(rng, cd, pp, net).await.unwrap();
+        d_ext_wit(qap.a, qap.b, qap.c, rng, pp, cd, net)
+            .await
+            .unwrap();
 
     println!(
         "s:{}, v:{}, h:{}, w:{}, u:{}, a:{}, h:{}",
@@ -71,30 +74,55 @@ async fn dsha256<E: Pairing, Net: MpcNet>(
 
     let msm_section = start_timer!(|| "MSM operations");
     // Compute msm while dropping the base vectors as they are not used again
-    let _pi_a_share: E::G1 =
-        dmsm::d_msm(&crs_share.s, &a_share, pp, net, MultiplexedStreamID::One)
-            .await
-            .unwrap();
+    let _pi_a_share: E::G1 = dmsm::d_msm(
+        &crs_share.s,
+        &a_share[..crs_share.s.len()],
+        pp,
+        net,
+        MultiplexedStreamID::One,
+    )
+    .await
+    .unwrap();
     println!("s done");
-    let _pi_b_share: E::G2 =
-        dmsm::d_msm(&crs_share.v, &a_share, pp, net, MultiplexedStreamID::One)
-            .await
-            .unwrap();
+    let _pi_b_share: E::G2 = dmsm::d_msm(
+        &crs_share.v,
+        &a_share[..crs_share.v.len()],
+        pp,
+        net,
+        MultiplexedStreamID::One,
+    )
+    .await
+    .unwrap();
     println!("v done");
-    let _pi_c_share1: E::G1 =
-        dmsm::d_msm(&crs_share.h, &a_share, pp, net, MultiplexedStreamID::One)
-            .await
-            .unwrap();
+    let _pi_c_share1: E::G1 = dmsm::d_msm(
+        &crs_share.h,
+        &a_share[..crs_share.h.len()],
+        pp,
+        net,
+        MultiplexedStreamID::One,
+    )
+    .await
+    .unwrap();
     println!("h done");
-    let _pi_c_share2: E::G1 =
-        dmsm::d_msm(&crs_share.w, &a_share, pp, net, MultiplexedStreamID::One)
-            .await
-            .unwrap();
+    let _pi_c_share2: E::G1 = dmsm::d_msm(
+        &crs_share.w,
+        &a_share[..crs_share.w.len()],
+        pp,
+        net,
+        MultiplexedStreamID::One,
+    )
+    .await
+    .unwrap();
     println!("w done");
-    let _pi_c_share3: E::G1 =
-        dmsm::d_msm(&crs_share.u, &h_share, pp, net, MultiplexedStreamID::One)
-            .await
-            .unwrap();
+    let _pi_c_share3: E::G1 = dmsm::d_msm(
+        &crs_share.u,
+        &h_share[..crs_share.u.len()],
+        pp,
+        net,
+        MultiplexedStreamID::One,
+    )
+    .await
+    .unwrap();
     println!("u done");
     let _pi_c_share: E::G1 = _pi_c_share1 + _pi_c_share2 + _pi_c_share3; //Additive notation for groups
                                                                          // Send _pi_a_share, _pi_b_share, _pi_c_share to client
@@ -113,12 +141,27 @@ async fn main() {
         "../fixtures/sha256/sha256.r1cs",
     )
     .unwrap();
-    let builder = CircomBuilder::new(cfg);
-    let circom = builder.setup();
+    let mut builder = CircomBuilder::new(cfg);
     let rng = &mut ark_std::rand::thread_rng();
+    builder.push_input("a", 3);
+    builder.push_input("b", 11);
+    let circuit = builder.setup();
     let (pk, _vk) =
-        Groth16::<Bn254, CircomReduction>::circuit_specific_setup(circom, rng)
+        Groth16::<Bn254, CircomReduction>::circuit_specific_setup(circuit, rng)
             .unwrap();
+
+    let circom = builder.build().unwrap();
+    let full_assignment = circom.witness.clone().unwrap();
+    let cs = ConstraintSystem::<Bn254Fr>::new_ref();
+    circom.generate_constraints(cs.clone()).unwrap();
+    assert!(cs.is_satisfied().unwrap());
+    let matrices = cs.to_matrices().unwrap();
+
+    let qap = groth16::qap::qap::<Bn254Fr, Radix2EvaluationDomain<_>>(
+        &matrices,
+        &full_assignment,
+    )
+    .unwrap();
     let pp_g1 = PackedSharingParams::new(2);
     let pp_g2 = PackedSharingParams::new(2);
     let crs_shares =
@@ -129,13 +172,17 @@ async fn main() {
     let network = Net::new_local_testnet(n).await.unwrap();
 
     network
-        .simulate_network_round(crs_shares, |mut net, crs_shares| async move {
-            let pp = PackedSharingParams::<Bn254Fr>::new(2);
-            let cd = ConstraintDomain::<Bn254Fr>::new(32768);
-            log::debug!("Running for party: {}", net.party_id());
-            let crs_share = crs_shares.get(net.party_id() as usize).unwrap();
+        .simulate_network_round(
+            (crs_shares, qap, full_assignment),
+            |mut net, (crs_shares, qap, a_share)| async move {
+                let pp = PackedSharingParams::<Bn254Fr>::new(2);
+                let cd = ConstraintDomain::<Bn254Fr>::new(32768);
+                log::debug!("Running for party: {}", net.party_id());
+                let crs_share =
+                    crs_shares.get(net.party_id() as usize).unwrap();
 
-            dsha256(&pp, crs_share, &cd, &mut net).await;
-        })
+                dsha256(&pp, crs_share, qap, &a_share, &cd, &mut net).await;
+            },
+        )
         .await;
 }
