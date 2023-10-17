@@ -33,7 +33,11 @@ do
   
   for pid in ${PROCS[@]}
   do
+<<<<<<< HEAD
     wait $pid || { echo "Process $pid exited with an error status"; exit 1; }
+=======
+    wait $pid
+>>>>>>> 6c6268a (Rebase)
   done
 done
 

@@ -192,6 +192,6 @@ fn get_certs(path: &PathBuf) -> Result<Vec<Certificate>, Box<dyn Error>> {
 
 /// Loads a private key from the path
 fn load_private_key(path: &PathBuf) -> Result<PrivateKey, Box<dyn Error>> {
-    let private_key_bytes = std::fs::read(&path)?;
+    let private_key_bytes = std::fs::read(path)?;
     Ok(PrivateKey(private_key_bytes))
 }

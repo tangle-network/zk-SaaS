@@ -381,7 +381,11 @@ impl LocalTestNet {
     >(
         self,
         user_data: U,
-        f: impl Fn(MpcNetConnection<TcpStream>, U) -> F + Send + Sync + Clone + 'static,
+        f: impl Fn(MpcNetConnection<TcpStream>, U) -> F
+            + Send
+            + Sync
+            + Clone
+            + 'static,
     ) -> Vec<K> {
         let mut futures = FuturesOrdered::new();
         for (_, connections) in self.nodes.into_iter() {
@@ -473,7 +477,7 @@ mod tests {
         let expected_sum = (0..4).sum::<u32>();
 
         testnet
-            .simulate_network_round(move |conn| async move {
+            .simulate_network_round((), move |conn, _| async move {
                 let sids = [
                     MultiplexedStreamID::Zero,
                     MultiplexedStreamID::One,

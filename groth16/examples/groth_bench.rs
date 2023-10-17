@@ -103,10 +103,10 @@ async fn main() {
     let network = Net::new_local_testnet(8).await.unwrap();
 
     network
-        .simulate_network_round((), |mut net, _| async move {
+        .simulate_network_round((), |net, _| async move {
             let pp = PackedSharingParams::<BlsFr>::new(2);
             let cd = ConstraintDomain::<BlsFr>::new(32768);
-            dgroth::<BlsE, _>(&pp, &cd, &mut net).await;
+            dgroth::<BlsE, _>(&pp, &cd, &net).await;
         })
         .await;
 }

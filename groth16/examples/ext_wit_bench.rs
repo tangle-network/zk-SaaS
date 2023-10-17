@@ -35,11 +35,11 @@ async fn main() {
     let network = Net::new_local_testnet(4).await.unwrap();
 
     network
-        .simulate_network_round((), |mut net, _| async move {
+        .simulate_network_round((), |net, _| async move {
             let rng = &mut ark_std::test_rng();
             let pp = PackedSharingParams::<Fr>::new(2);
             let cd = ConstraintDomain::<Fr>::new(1 << 14);
-            groth_ext_wit(rng, &cd, &pp, &mut net).await;
+            groth_ext_wit(rng, &cd, &pp, &net).await;
         })
         .await;
 }

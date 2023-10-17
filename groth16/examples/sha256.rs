@@ -11,6 +11,7 @@ use ark_poly::Radix2EvaluationDomain;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem};
 use ark_std::Zero;
 use ark_std::{cfg_chunks, cfg_into_iter, end_timer, start_timer};
+
 use dist_primitives::dmsm;
 use log::debug;
 use mpc_net::{LocalTestNet as Net, MpcNet, MultiplexedStreamID};
@@ -66,7 +67,6 @@ async fn dsha256<E: Pairing, Net: MpcNet>(
         d_ext_wit(qap.a, qap.b, qap.c, rng, pp, cd, net)
             .await
             .unwrap();
-
     println!(
         "s:{}, v:{}, h:{}, w:{}, u:{}, a:{}, h:{}",
         crs_share.s.len(),
