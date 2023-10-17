@@ -3,8 +3,6 @@ use mpc_net::prod::{ProdNet, RustlsCertificate};
 use mpc_net::{MpcNet, MultiplexedStreamID};
 use rustls::{Certificate, PrivateKey, RootCertStore};
 use std::error::Error;
-use std::fs::File;
-use std::io::BufReader;
 use std::path::PathBuf;
 use structopt::StructOpt;
 use tokio_util::bytes::Bytes;
@@ -33,15 +31,15 @@ struct Opt {
     bind_addr: Option<String>,
 
     /// The address of the king (required for the clients)
+    #[structopt(short, long)]
     king_addr: Option<String>,
 
     /// The king's certificate (required for the clients)
-    #[structopt(parse(from_os_str))]
+    #[structopt(parse(from_os_str), short, long)]
     king_cert: Option<PathBuf>,
 
-    /// List of certificates for each of the clients. Names in the supplied directory should follow
-    /// this convention: cert_<client_id>.pem
-    #[structopt(short)]
+    /// List of certificates for each of the clients. Certs in the supplied directory should end with .cert.der
+    #[structopt(short, long)]
     client_cert_dir: Option<PathBuf>,
 }
 
@@ -121,10 +119,12 @@ async fn load_king(opts: Opt) -> Result<ProdNet, Box<dyn Error>> {
         let path = file.path();
         let fname = file.file_name();
         let name = fname.to_str().unwrap();
-        if name.ends_with(".cert.pem") {
+        if name.ends_with(".cert.der") {
             load_cert(&path, &mut client_certs)?;
         }
     }
+
+    println!("King loaded {} certs", client_certs.roots.len());
 
     let identity = RustlsCertificate {
         cert: king_cert,
@@ -178,29 +178,13 @@ fn load_cert(
 }
 
 fn get_certs(path: &PathBuf) -> Result<Vec<Certificate>, Box<dyn Error>> {
-    let file = File::open(path)?;
-    let mut reader = BufReader::new(file);
-    let certs = rustls_pemfile::certs(&mut reader)?;
-    Ok(certs.into_iter().map(|c| Certificate(c)).collect())
+    let bytes = std::fs::read(path)?;
+    //let certs = rustls_pemfile::certs(&mut reader)?;
+    Ok(vec![Certificate(bytes)])
 }
 
 /// Loads a private key from the path
 fn load_private_key(path: &PathBuf) -> Result<PrivateKey, Box<dyn Error>> {
-    let file = File::open(&path)?;
-    let mut reader = BufReader::new(file);
-    let mut keys = rustls_pemfile::pkcs8_private_keys(&mut reader)?;
-
-    match keys.len() {
-        0 => Err(format!(
-            "No PKCS8-encoded private key found in {}",
-            path.display()
-        )
-        .into()),
-        1 => Ok(PrivateKey(keys.remove(0))),
-        _ => Err(format!(
-            "More than one PKCS8-encoded private key found in {}",
-            path.display()
-        )
-        .into()),
-    }
+    let private_key_bytes = std::fs::read(&path)?;
+    Ok(PrivateKey(private_key_bytes))
 }
