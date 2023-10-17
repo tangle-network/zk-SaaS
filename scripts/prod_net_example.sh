@@ -42,7 +42,7 @@ do
 
   for pid in ${PROCS[@]}
   do
-    wait $pid || exit 1
+    wait $pid || { echo "Process $pid exited with an error status"; exit 1; }
   done
 done
 
