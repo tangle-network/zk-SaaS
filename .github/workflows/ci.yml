@@ -84,3 +84,14 @@ jobs:
           command: run
           args: --release --example ${{ matrix.example }}
 
+  prod_net_integration_test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Run test
+        run: ./scripts/prod_net_example.sh

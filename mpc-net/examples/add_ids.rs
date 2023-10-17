@@ -55,8 +55,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         load_client(opts).await?
     };
 
+    println!("Loaded net for id {my_id}");
+
     // Run the network
-    let expected_sum_result = (0..=n_parties).map(|r| r as u32).sum::<u32>();
+    let expected_sum_result = (0..n_parties).map(|r| r as u32).sum::<u32>();
 
     let bytes = bincode2::serialize(&my_id).unwrap();
     let sum = if let Some(king_recv) = net
@@ -69,8 +71,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let mut sum = 0;
         for bytes in king_recv {
             let id: u32 = bincode2::deserialize(&bytes).unwrap();
+            println!("King RECV id {id}");
             sum += id;
         }
+        println!("King sum: {sum}");
         // now, send the sum to each of the clients
         let bytes = bincode2::serialize(&sum).unwrap();
         let send = (0..n_parties)
