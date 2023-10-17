@@ -12,11 +12,12 @@ the client nodes that will connect to the king.
 Thus, we must first generate identities for each of the nodes, including the king. This can be done with the following command:
 
 ```bash
-openssl req -x509 -newkey rsa:4096 -keyout private_n.pem -out public_n.pem -sha256 -days 3650 -nodes -subj "/C=XX/ST=StateName/L=CityName/O=CompanyName/OU=CompanySectionName/CN=localhost"
+cargo run --example gen_cert -- ./certs/public_n.cert.der ./certs/private_n.key.der localhost
 ```
 
-Note: change `public_n` and `private_n` to the desired name for each node.
-Note: we do not need certificates backed by a CA like LetsEncrypt, since we are the only ones who will be using these certificates.
+* Note: change `public_n` and `private_n` to the desired name for each node.
+* Note: we do not need certificates backed by a CA like LetsEncrypt, since we are the only ones who will be using these certificates and trust ourselves to create them.
+* Note: the final argument, localhost, will need to be changed to the IP address of the node if you are running the king and clients on different machines. For localhost testing, `localhost` is acceptable
 
 With these public key documents (in the form of certificates), we start the king by passing in the king's private key and public key, as well as a list of all the client's public keys.
 For the clients, we pass the public and private key of the client, followed by the public key of the king.
