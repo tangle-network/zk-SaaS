@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::future::Future;
 use std::net::SocketAddr;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -102,6 +101,7 @@ pub struct MpcNetConnection<IO: AsyncRead + AsyncWrite + Unpin> {
     pub id: u32,
     pub listener: Option<TcpListener>,
     pub peers: HashMap<u32, Peer<IO>>,
+    pub n_parties: usize,
 }
 
 impl MpcNetConnection<TcpStream> {
@@ -234,11 +234,6 @@ impl<IO: AsyncRead + AsyncWrite + Unpin + Send> MpcNetConnection<IO> {
 
         let r = if self.is_king() {
             let mut r = FuturesOrdered::new();
-            let bytes_king = bytes_out.clone();
-            r.push_back(Box::pin(async move { Ok(bytes_king) })
-                as Pin<
-                    Box<dyn Future<Output = Result<Bytes, MpcNetError>> + Send>,
-                >);
 
             for (id, peer) in self.peers.iter() {
                 let bytes_out: Bytes = bytes_out.clone();
@@ -249,11 +244,19 @@ impl<IO: AsyncRead + AsyncWrite + Unpin + Send> MpcNetConnection<IO> {
                         recv_stream(peer.streams.as_ref(), sid).await?
                     };
 
-                    Ok::<_, MpcNetError>(bytes_in)
+                    Ok::<_, MpcNetError>((*id, bytes_in))
                 }));
             }
 
-            Ok(Some(r.try_collect::<Vec<Bytes>>().await?))
+            let mut ret: HashMap<u32, Bytes> = r.try_collect().await?;
+            ret.entry(0).or_insert_with(|| bytes_out.clone());
+
+            let mut sorted_ret = Vec::new();
+            for x in 0..self.n_parties {
+                sorted_ret.push(ret.remove(&(x as u32)).unwrap());
+            }
+
+            Ok(Some(sorted_ret))
         } else {
             let stream = self.peers.get(&0).unwrap().streams.as_ref();
             send_stream(stream, bytes_out, sid).await?;
@@ -268,21 +271,11 @@ impl<IO: AsyncRead + AsyncWrite + Unpin + Send> MpcNetConnection<IO> {
         sid: MultiplexedStreamID,
     ) -> Result<Bytes, MpcNetError> {
         let own_id = self.id;
-        let n_parties = self.peers.len() + 1;
 
         if let Some(bytes_out) = bytes_out {
             if !self.is_king() {
                 return Err(MpcNetError::BadInput {
                     err: "recv_from_king called with bytes_out when not king",
-                });
-            }
-
-            if bytes_out.len() != n_parties {
-                return Err(MpcNetError::BadInputLength {
-                    err:
-                        "recv_from_king called with wrong number of input bytes",
-                    expected: n_parties,
-                    got: bytes_out.len(),
                 });
             }
 
@@ -343,6 +336,7 @@ impl LocalTestNet {
                 id: my_party_id as u32,
                 listener: Some(my_listener),
                 peers: Default::default(),
+                n_parties,
             };
             for peer_id in 0..n_parties {
                 // NOTE: this is the listen addr
@@ -402,7 +396,7 @@ impl<IO: AsyncRead + AsyncWrite + Unpin + Send> MpcNet
     for MpcNetConnection<IO>
 {
     fn n_parties(&self) -> usize {
-        self.peers.len()
+        self.n_parties
     }
 
     fn party_id(&self) -> u32 {

@@ -10,19 +10,9 @@ use tokio_util::bytes::Bytes;
 #[derive(Clone, Debug)]
 pub enum MpcNetError {
     Generic(String),
-    Protocol {
-        err: String,
-        party: u32,
-    },
+    Protocol { err: String, party: u32 },
     NotConnected,
-    BadInput {
-        err: &'static str,
-    },
-    BadInputLength {
-        err: &'static str,
-        expected: usize,
-        got: usize,
-    },
+    BadInput { err: &'static str },
 }
 
 impl<T: ToString> From<T> for MpcNetError {

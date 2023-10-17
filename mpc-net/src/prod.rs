@@ -107,6 +107,7 @@ impl ProdNet {
             id: 0,
             listener: None,
             peers: Default::default(),
+            n_parties: n_peers + 1,
         };
 
         for _ in 0..n_peers {
@@ -159,6 +160,7 @@ impl ProdNet {
         king: T,
         identity: R,
         server_cert: RootCertStore,
+        n_parties: usize,
     ) -> Result<Self, MpcNetError> {
         let king_addr: SocketAddr =
             king.to_socket_addrs()?
@@ -182,6 +184,7 @@ impl ProdNet {
             id,
             listener: None,
             peers: Default::default(),
+            n_parties,
         };
         connections.peers.insert(
             0,
