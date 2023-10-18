@@ -391,7 +391,7 @@ mod test {
             })
             .await;
 
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
         // Assert all values are the same inside the sums vector
         assert!(sums.iter().all(|sum| *sum == expected_result));
     }
@@ -435,6 +435,9 @@ mod test {
             client_certs.clone(),
         ))
         .map_err(|err| MpcNetError::Generic(err.to_string()));
+
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
         let peers = FuturesUnordered::new();
         for (i, identity) in client_identities.into_iter().enumerate() {
             let peer = ProdNet::new_peer(
