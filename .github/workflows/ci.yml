@@ -36,7 +36,7 @@ jobs:
           args: -- -D warnings
 
   unit_tests:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v2
       - name: Setup Rust
@@ -49,7 +49,7 @@ jobs:
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: -- --skip packed_pk_from_arkworks_pk
+          args: -- --skip packed_pk_from_arkworks_pk --test-threads=1
 
   proving_key_unit_test:
     runs-on: ubuntu-latest
@@ -70,8 +70,7 @@ jobs:
     runs-on: macos-latest
     strategy:
       matrix:
-        # TODO: add dfft_test, dmsm_test
-        example: [ext_wit_bench, groth_bench, dpp_test, msm_bench, dmsm_bench, local_dfft_test]
+        example: [ext_wit_bench, groth_bench, dpp_test, msm_bench, dmsm_bench, local_dfft_test, dfft_test, dmsm_test]
     steps:
       - uses: actions/checkout@v2
       - name: Setup Rust
@@ -79,9 +78,20 @@ jobs:
         with:
           toolchain: stable
           override: true
-      - name: Run ext wit bench
+      - name: Run test
         uses: actions-rs/cargo@v1
         with:
           command: run
           args: --release --example ${{ matrix.example }}
 
+  prod_net_integration_test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Run test
+        run: ./scripts/prod_net_example.sh

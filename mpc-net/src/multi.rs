@@ -8,16 +8,16 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::{MpcNetError, MultiplexedStreamID};
-use ark_std::{end_timer, start_timer};
 use async_smux::{MuxBuilder, MuxStream};
 use async_trait::async_trait;
 use futures::stream::{FuturesOrdered, FuturesUnordered};
 use futures::{SinkExt, StreamExt, TryStreamExt};
 use parking_lot::Mutex;
+use tokio::sync::Mutex as TokioMutex;
 use tokio_util::bytes::Bytes;
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
 
-use super::{MpcNet, Stats};
+use super::MpcNet;
 
 pub type WrappedStream<T> = Framed<T, LengthDelimitedCodec>;
 
@@ -30,13 +30,13 @@ fn wrap_stream<T: AsyncRead + AsyncWrite>(
         .new_framed(stream)
 }
 
-struct Peer {
-    id: u32,
-    listen_addr: SocketAddr,
-    streams: Option<Vec<WrappedMuxStream<TcpStream>>>,
+pub struct Peer<IO: AsyncRead + AsyncWrite + Unpin> {
+    pub id: u32,
+    pub listen_addr: SocketAddr,
+    pub streams: Option<Vec<TokioMutex<WrappedMuxStream<IO>>>>,
 }
 
-impl Debug for Peer {
+impl<IO: AsyncRead + AsyncWrite + Unpin> Debug for Peer<IO> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let mut f = f.debug_struct("Peer");
         f.field("id", &self.id);
@@ -46,7 +46,7 @@ impl Debug for Peer {
     }
 }
 
-impl Clone for Peer {
+impl<IO: AsyncRead + AsyncWrite + Unpin> Clone for Peer<IO> {
     fn clone(&self) -> Self {
         Self {
             id: self.id,
@@ -60,26 +60,26 @@ pub type WrappedMuxStream<T> = Framed<MuxStream<T>, LengthDelimitedCodec>;
 pub const MULTIPLEXED_STREAMS: usize = 3;
 
 /// Should be called immediately after making a connection to a peer.
-async fn multiplex_stream<
+pub async fn multiplex_stream<
     T: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 >(
     channels: usize,
     is_server: bool,
     stream: T,
-) -> Result<Vec<WrappedMuxStream<T>>, MpcNetError> {
+) -> Result<Vec<TokioMutex<WrappedMuxStream<T>>>, MpcNetError> {
     if is_server {
         let (_connector, mut acceptor, worker) =
             MuxBuilder::server().with_connection(stream).build();
         tokio::spawn(worker);
         let mut ret = Vec::new();
         for _ in 0..channels {
-            ret.push(wrap_stream(acceptor.accept().await.ok_or_else(
-                || {
+            ret.push(TokioMutex::new(wrap_stream(
+                acceptor.accept().await.ok_or_else(|| {
                     MpcNetError::Generic(
                         "Error accepting connection".to_string(),
                     )
-                },
-            )?));
+                })?,
+            )));
         }
 
         Ok(ret)
@@ -89,7 +89,7 @@ async fn multiplex_stream<
         tokio::spawn(worker);
         let mut ret = Vec::new();
         for _ in 0..channels {
-            ret.push(wrap_stream(connector.connect()?));
+            ret.push(TokioMutex::new(wrap_stream(connector.connect()?)));
         }
 
         Ok(ret)
@@ -97,16 +97,15 @@ async fn multiplex_stream<
 }
 
 #[derive(Default, Debug)]
-pub struct Connections {
-    id: u32,
-    listener: Option<TcpListener>,
-    peers: HashMap<u32, Peer>,
-    stats: Stats,
+pub struct MpcNetConnection<IO: AsyncRead + AsyncWrite + Unpin> {
+    pub id: u32,
+    pub listener: Option<TcpListener>,
+    pub peers: HashMap<u32, Peer<IO>>,
+    pub n_parties: usize,
 }
 
-impl Connections {
+impl MpcNetConnection<TcpStream> {
     async fn connect_to_all(&mut self) -> Result<(), MpcNetError> {
-        let timer = start_timer!(|| "Connecting");
         let n_minus_1 = self.n_parties() - 1;
         let my_id = self.id;
 
@@ -192,7 +191,7 @@ impl Connections {
         println!("All connected");
 
         // Every party will use this channel for genesis
-        let genesis_round_channel = MultiplexedStreamID::One;
+        let genesis_round_channel = MultiplexedStreamID::Zero;
 
         // Do a round with the king, to be sure everyone is ready
         let from_all = self
@@ -214,113 +213,75 @@ impl Connections {
         }
 
         println!("Done with recv_from_king");
-
-        end_timer!(timer);
         Ok(())
     }
+}
 
-    fn am_king(&self) -> bool {
+impl<IO: AsyncRead + AsyncWrite + Unpin + Send> MpcNetConnection<IO> {
+    fn is_king(&self) -> bool {
         self.id == 0
-    }
-
-    async fn broadcast(
-        &mut self,
-        bytes_out: &[u8],
-        sid: MultiplexedStreamID,
-    ) -> Result<Vec<Vec<u8>>, MpcNetError> {
-        let timer = start_timer!(|| format!("Broadcast {}", bytes_out.len()));
-        let bytes_out: Bytes = bytes_out.to_vec().into();
-        let m = bytes_out.len();
-        let own_id = self.id;
-        self.stats.bytes_sent += self.peers.len() * m;
-        self.stats.bytes_recv += self.peers.len() * m;
-        self.stats.broadcasts += 1;
-
-        let mut r = FuturesOrdered::default();
-        for (id, peer) in self.peers.iter_mut() {
-            let bytes_out = bytes_out.clone();
-            r.push_back(Box::pin(async move {
-                // TODO: optimize this
-                let bytes_in = match *id {
-                    id if id < own_id => {
-                        let ret =
-                            recv_stream(peer.streams.as_mut(), sid).await?;
-                        send_stream(peer.streams.as_mut(), bytes_out, sid)
-                            .await?;
-                        ret.to_vec()
-                    }
-                    id if id == own_id => bytes_out.to_vec(),
-                    _ => {
-                        send_stream(peer.streams.as_mut(), bytes_out, sid)
-                            .await?;
-                        recv_stream(peer.streams.as_mut(), sid).await?.to_vec()
-                    }
-                };
-
-                Ok(bytes_in)
-            }));
-        }
-
-        let r = r.try_collect::<Vec<Vec<u8>>>().await;
-        end_timer!(timer);
-        r
     }
 
     // If we are the king, we receive all the packets
     // If we are not the king, we send our packet to the king
     async fn send_to_king(
-        &mut self,
+        &self,
         bytes_out: &[u8],
         sid: MultiplexedStreamID,
-    ) -> Result<Option<Vec<Vec<u8>>>, MpcNetError> {
-        let timer = start_timer!(|| format!("To king {}", bytes_out.len()));
-        let bytes_out: Bytes = bytes_out.to_vec().into();
-        let m = bytes_out.len();
+    ) -> Result<Option<Vec<Bytes>>, MpcNetError> {
+        let bytes_out = Bytes::copy_from_slice(bytes_out);
         let own_id = self.id;
-        self.stats.to_king += 1;
-        let r = if self.am_king() {
-            self.stats.bytes_recv += self.peers.len() * m;
+
+        let r = if self.is_king() {
             let mut r = FuturesOrdered::new();
 
-            for (id, peer) in self.peers.iter_mut() {
+            for (id, peer) in self.peers.iter() {
                 let bytes_out: Bytes = bytes_out.clone();
                 r.push_back(Box::pin(async move {
-                    // TODO: optimize this
                     let bytes_in = if *id == own_id {
-                        bytes_out.to_vec()
+                        bytes_out
                     } else {
-                        recv_stream(peer.streams.as_mut(), sid).await?.to_vec()
+                        recv_stream(peer.streams.as_ref(), sid).await?
                     };
 
-                    Ok::<_, MpcNetError>(bytes_in)
+                    Ok::<_, MpcNetError>((*id, bytes_in))
                 }));
             }
 
-            Ok(Some(r.try_collect::<Vec<Vec<u8>>>().await?))
+            let mut ret: HashMap<u32, Bytes> = r.try_collect().await?;
+            ret.entry(0).or_insert_with(|| bytes_out.clone());
+
+            let mut sorted_ret = Vec::new();
+            for x in 0..self.n_parties {
+                sorted_ret.push(ret.remove(&(x as u32)).unwrap());
+            }
+
+            Ok(Some(sorted_ret))
         } else {
-            self.stats.bytes_sent += m;
-            let stream = self.peers.get_mut(&0).unwrap().streams.as_mut();
+            let stream = self.peers.get(&0).unwrap().streams.as_ref();
             send_stream(stream, bytes_out, sid).await?;
             Ok(None)
         };
-        end_timer!(timer);
         r
     }
 
     async fn recv_from_king(
-        &mut self,
-        bytes_out: Option<Vec<Vec<u8>>>,
+        &self,
+        bytes_out: Option<Vec<Bytes>>,
         sid: MultiplexedStreamID,
-    ) -> Result<Vec<u8>, MpcNetError> {
+    ) -> Result<Bytes, MpcNetError> {
         let own_id = self.id;
-        self.stats.from_king += 1;
-        if self.am_king() {
-            let bytes_out = bytes_out.unwrap();
-            let m = bytes_out[0].len();
-            let timer = start_timer!(|| format!("From king {}", m));
-            self.stats.bytes_sent += self.peers.len() * (m + 8);
 
-            for (id, peer) in self.peers.iter_mut().filter(|p| *p.0 != own_id) {
+        if let Some(bytes_out) = bytes_out {
+            if !self.is_king() {
+                return Err(MpcNetError::BadInput {
+                    err: "recv_from_king called with bytes_out when not king",
+                });
+            }
+
+            let m = bytes_out[0].len();
+
+            for (id, peer) in self.peers.iter().filter(|p| *p.0 != own_id) {
                 if bytes_out[*id as usize].len() != m {
                     return Err(MpcNetError::Protocol {
                         err: format!("Peer {} sent wrong number of bytes", id),
@@ -329,32 +290,30 @@ impl Connections {
                 }
 
                 send_stream(
-                    peer.streams.as_mut(),
-                    bytes_out[*id as usize].clone().into(),
+                    peer.streams.as_ref(),
+                    bytes_out[*id as usize].clone(),
                     sid,
                 )
                 .await?;
             }
 
-            end_timer!(timer);
             Ok(bytes_out[own_id as usize].clone())
         } else {
-            let stream = self.peers.get_mut(&0).unwrap().streams.as_mut();
-            let ret = recv_stream(stream, sid).await?;
-            self.stats.bytes_recv += ret.len();
-            Ok(ret.into())
-        }
-    }
+            if self.is_king() {
+                return Err(MpcNetError::BadInput {
+                    err: "recv_from_king called with no bytes_out when king",
+                });
+            }
 
-    fn uninit(&mut self) {
-        for p in &mut self.peers {
-            p.1.streams = None;
+            let stream = self.peers.get(&0).unwrap().streams.as_ref();
+            let ret = recv_stream(stream, sid).await?;
+            Ok(ret)
         }
     }
 }
 
 pub struct LocalTestNet {
-    nodes: HashMap<usize, Connections>,
+    nodes: HashMap<usize, MpcNetConnection<TcpStream>>,
 }
 
 impl LocalTestNet {
@@ -373,11 +332,11 @@ impl LocalTestNet {
         // Step 2: populate the nodes with peer metadata (do NOT init the connections yet)
         let mut nodes = HashMap::new();
         for (my_party_id, my_listener) in listeners.into_iter() {
-            let mut connections = Connections {
+            let mut connections = MpcNetConnection {
                 id: my_party_id as u32,
                 listener: Some(my_listener),
                 peers: Default::default(),
-                stats: Default::default(),
+                n_parties,
             };
             for peer_id in 0..n_parties {
                 // NOTE: this is the listen addr
@@ -417,7 +376,7 @@ impl LocalTestNet {
         K: Send + Sync + 'static,
     >(
         self,
-        f: impl Fn(Connections) -> F + Send + Sync + Clone + 'static,
+        f: impl Fn(MpcNetConnection<TcpStream>) -> F + Send + Sync + Clone + 'static,
     ) -> Vec<K> {
         let mut futures = FuturesOrdered::new();
         for (_, connections) in self.nodes.into_iter() {
@@ -433,9 +392,11 @@ impl LocalTestNet {
 }
 
 #[async_trait]
-impl MpcNet for Connections {
+impl<IO: AsyncRead + AsyncWrite + Unpin + Send> MpcNet
+    for MpcNetConnection<IO>
+{
     fn n_parties(&self) -> usize {
-        self.peers.len()
+        self.n_parties
     }
 
     fn party_id(&self) -> u32 {
@@ -446,66 +407,108 @@ impl MpcNet for Connections {
         self.peers.iter().all(|r| r.1.streams.is_some())
     }
 
-    fn deinit(&mut self) {
-        self.uninit()
-    }
-
-    fn reset_stats(&mut self) {
-        self.stats = Stats::default();
-    }
-
-    fn stats(&self) -> &Stats {
-        &self.stats
-    }
-
-    async fn broadcast_bytes(
-        &mut self,
+    async fn client_send_or_king_receive(
+        &self,
         bytes: &[u8],
         sid: MultiplexedStreamID,
-    ) -> Result<Vec<Vec<u8>>, MpcNetError> {
-        self.broadcast(bytes, sid).await
-    }
-
-    async fn send_bytes_to_king(
-        &mut self,
-        bytes: &[u8],
-        sid: MultiplexedStreamID,
-    ) -> Result<Option<Vec<Vec<u8>>>, MpcNetError> {
+    ) -> Result<Option<Vec<Bytes>>, MpcNetError> {
         self.send_to_king(bytes, sid).await
     }
 
-    async fn recv_bytes_from_king(
-        &mut self,
-        bytes: Option<Vec<Vec<u8>>>,
+    async fn client_receive_or_king_send(
+        &self,
+        bytes: Option<Vec<Bytes>>,
         sid: MultiplexedStreamID,
-    ) -> Result<Vec<u8>, MpcNetError> {
+    ) -> Result<Bytes, MpcNetError> {
         self.recv_from_king(bytes, sid).await
     }
 }
 
 async fn send_stream<T: AsyncRead + AsyncWrite + Unpin>(
-    stream: Option<&mut Vec<WrappedStream<T>>>,
+    stream: Option<&Vec<TokioMutex<WrappedStream<T>>>>,
     bytes: Bytes,
     sid: MultiplexedStreamID,
 ) -> Result<(), MpcNetError> {
-    if let Some(stream) = stream.and_then(|r| r.get_mut(sid as usize)) {
-        Ok(stream.send(bytes).await?)
+    if let Some(stream) = stream.and_then(|r| r.get(sid as usize)) {
+        Ok(stream.lock().await.send(bytes).await?)
     } else {
         Err(MpcNetError::Generic("Stream is None".to_string()))
     }
 }
 
 async fn recv_stream<T: AsyncRead + AsyncWrite + Unpin>(
-    stream: Option<&mut Vec<WrappedStream<T>>>,
+    stream: Option<&Vec<TokioMutex<WrappedStream<T>>>>,
     sid: MultiplexedStreamID,
 ) -> Result<Bytes, MpcNetError> {
-    if let Some(stream) = stream.and_then(|r| r.get_mut(sid as usize)) {
+    if let Some(stream) = stream.and_then(|r| r.get(sid as usize)) {
         Ok(stream
+            .lock()
+            .await
             .next()
             .await
             .ok_or_else(|| MpcNetError::Generic("Stream died".to_string()))??
             .freeze())
     } else {
         Err(MpcNetError::Generic("Stream is None".to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::multi::{recv_stream, send_stream};
+    use crate::{LocalTestNet, MultiplexedStreamID};
+    use std::collections::HashMap;
+
+    #[tokio::test]
+    async fn test_multiplexing() {
+        const N_PARTIES: usize = 4;
+        let testnet = LocalTestNet::new_local_testnet(N_PARTIES).await.unwrap();
+        let expected_sum = (0..4).sum::<u32>();
+
+        testnet
+            .simulate_network_round(move |conn| async move {
+                let sids = [
+                    MultiplexedStreamID::Zero,
+                    MultiplexedStreamID::One,
+                    MultiplexedStreamID::Two,
+                ];
+                // Broadcast our ID to everyone
+                let my_id = conn.id;
+                for peer in &mut conn.peers.values() {
+                    if peer.id == my_id {
+                        continue;
+                    }
+                    for sid in sids {
+                        send_stream(
+                            peer.streams.as_ref(),
+                            vec![my_id as u8].into(),
+                            sid,
+                        )
+                        .await
+                        .unwrap();
+                    }
+                }
+
+                // Receive everyone else's ID
+                let mut ids = HashMap::<_, Vec<u32>>::new();
+                for peer in &mut conn.peers.values() {
+                    if peer.id == my_id {
+                        continue;
+                    }
+                    for sid in sids {
+                        let recv_bytes =
+                            recv_stream(peer.streams.as_ref(), sid)
+                                .await
+                                .unwrap();
+                        let decoded = recv_bytes[0] as u32;
+                        ids.entry(sid).or_default().push(decoded);
+                    }
+                }
+
+                for (_sid, ids) in ids {
+                    assert_eq!(expected_sum, ids.iter().sum::<u32>() + my_id);
+                }
+            })
+            .await;
     }
 }

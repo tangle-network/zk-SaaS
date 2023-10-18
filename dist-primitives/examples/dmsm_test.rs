@@ -1,7 +1,7 @@
 use ark_bls12_377::Fr;
 use ark_ec::CurveGroup;
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
-use ark_std::{end_timer, start_timer, UniformRand};
+use ark_std::UniformRand;
 use dist_primitives::dmsm::d_msm;
 use dist_primitives::dmsm::packexp_from_public;
 use mpc_net::{LocalTestNet as Net, MpcNet, MultiplexedStreamID};
@@ -10,10 +10,9 @@ use secret_sharing::pss::PackedSharingParams;
 pub async fn d_msm_test<G: CurveGroup, Net: MpcNet>(
     pp: &PackedSharingParams<G::ScalarField>,
     dom: &Radix2EvaluationDomain<G::ScalarField>,
-    net: &mut Net,
+    net: &Net,
 ) {
     // let m = pp.l*4;
-    // let case_timer = start_timer!(||"affinemsm_test");
     let mbyl: usize = dom.size() / pp.l;
     println!(
         "m: {}, mbyl: {}, party_id: {}",
@@ -47,12 +46,9 @@ pub async fn d_msm_test<G: CurveGroup, Net: MpcNet>(
         x_share.iter().map(|s| (*s).into()).collect();
 
     // Will be comparing against this in the end
-    let nmsm = start_timer!(|| "Ark msm");
     let should_be_output =
         G::msm(x_pub_aff.as_slice(), y_pub.as_slice()).unwrap();
-    end_timer!(nmsm);
 
-    let dmsm = start_timer!(|| "Distributed msm");
     let output = d_msm::<G, Net>(
         &x_share_aff,
         &y_share,
@@ -62,7 +58,6 @@ pub async fn d_msm_test<G: CurveGroup, Net: MpcNet>(
     )
     .await
     .unwrap();
-    end_timer!(dmsm);
 
     if net.is_king() {
         assert_eq!(should_be_output, output);

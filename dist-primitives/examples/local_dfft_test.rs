@@ -3,7 +3,7 @@ use std::mem;
 use ark_bls12_377::Fr;
 use ark_ff::{FftField, PrimeField};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
-use ark_std::{end_timer, log2, start_timer};
+use ark_std::log2;
 use dist_primitives::dfft::fft_in_place_rearrange;
 use secret_sharing::pss::PackedSharingParams;
 
@@ -24,7 +24,6 @@ pub fn local_dfft_test<F: FftField + PrimeField>(
     let output = dom.fft(&x);
 
     // Rearranging x
-    let myfft_timer = start_timer!(|| "MY FFT");
 
     fft_in_place_rearrange::<F>(&mut x);
 
@@ -34,8 +33,6 @@ pub fn local_dfft_test<F: FftField + PrimeField>(
     }
 
     let mut s1 = px.clone();
-
-    let now = start_timer!(|| "FFT1");
 
     // fft1
     for i in (log2(pp.l) + 1..=log2(dom.size())).rev() {
@@ -55,8 +52,6 @@ pub fn local_dfft_test<F: FftField + PrimeField>(
         }
     }
 
-    end_timer!(now);
-
     // psstoss
     let mut sx: Vec<F> = Vec::new();
     for i in 0..mbyl {
@@ -66,8 +61,6 @@ pub fn local_dfft_test<F: FftField + PrimeField>(
     // fft2
     let mut s1 = sx.clone();
     let mut s2 = sx.clone();
-
-    let now = start_timer!(|| "FFT2");
 
     for i in (1..=log2(pp.l)).rev() {
         let poly_size = dom.size() / 2usize.pow(i);
@@ -84,9 +77,6 @@ pub fn local_dfft_test<F: FftField + PrimeField>(
         }
         mem::swap(&mut s1, &mut s2);
     }
-    end_timer!(now);
-
-    end_timer!(myfft_timer);
 
     s1.rotate_right(1);
 

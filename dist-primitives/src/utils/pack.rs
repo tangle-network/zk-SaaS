@@ -1,5 +1,4 @@
 use ark_ff::FftField;
-use ark_std::{end_timer, start_timer};
 use secret_sharing::pss::PackedSharingParams;
 
 pub fn pack_vec<F: FftField>(
@@ -7,7 +6,6 @@ pub fn pack_vec<F: FftField>(
     pp: &PackedSharingParams<F>,
 ) -> Vec<Vec<F>> {
     debug_assert_eq!(secrets.len() % pp.l, 0, "Mismatch of size in pack_vec");
-    let pack_shares_timer = start_timer!(|| "Packing shares");
 
     // pack shares
     let shares = secrets
@@ -15,7 +13,6 @@ pub fn pack_vec<F: FftField>(
         .map(|x| pp.pack_from_public(x.to_vec()))
         .collect::<Vec<_>>();
 
-    end_timer!(pack_shares_timer);
     shares
 }
 pub fn transpose<T: Clone>(matrix: Vec<Vec<T>>) -> Vec<Vec<T>> {
