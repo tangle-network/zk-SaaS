@@ -63,7 +63,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let bytes = bincode2::serialize(&my_id).unwrap();
     let sum = if let Some(king_recv) = net
-        .send_bytes_to_king(&bytes, MultiplexedStreamID::Zero)
+        .client_send_or_king_receive(&bytes, MultiplexedStreamID::Zero)
         .await
         .unwrap()
     {
@@ -81,14 +81,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         let send = (0..n_parties)
             .map(|_| bytes.clone().into())
             .collect::<Vec<Bytes>>();
-        net.recv_bytes_from_king(Some(send), MultiplexedStreamID::Zero)
+        net.client_receive_or_king_send(Some(send), MultiplexedStreamID::Zero)
             .await
             .unwrap();
         sum
     } else {
         assert_ne!(my_id, 0);
         let bytes = net
-            .recv_bytes_from_king(None, MultiplexedStreamID::Zero)
+            .client_receive_or_king_send(None, MultiplexedStreamID::Zero)
             .await
             .unwrap();
         let sum: u32 = bincode2::deserialize(&bytes).unwrap();

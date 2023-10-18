@@ -43,14 +43,14 @@ pub trait MpcNet: Send + Sync {
     /// Is the network layer initalized?
     fn is_init(&self) -> bool;
     /// All parties send bytes to the king. The king receives all the bytes
-    async fn send_bytes_to_king(
+    async fn client_send_or_king_receive(
         &self,
         bytes: &[u8],
         sid: MultiplexedStreamID,
     ) -> Result<Option<Vec<Bytes>>, MpcNetError>;
     /// All parties recv bytes from the king.
     /// Provide bytes iff you're the king!
-    async fn recv_bytes_from_king(
+    async fn client_receive_or_king_send(
         &self,
         bytes: Option<Vec<Bytes>>,
         sid: MultiplexedStreamID,
@@ -67,7 +67,8 @@ pub trait MpcNet: Send + Sync {
         sid: MultiplexedStreamID,
         f: impl Fn(Vec<Bytes>) -> Vec<Bytes> + Send,
     ) -> Result<Bytes, MpcNetError> {
-        let king_response = self.send_bytes_to_king(bytes, sid).await?.map(f);
-        self.recv_bytes_from_king(king_response, sid).await
+        let king_response =
+            self.client_send_or_king_receive(bytes, sid).await?.map(f);
+        self.client_receive_or_king_send(king_response, sid).await
     }
 }
