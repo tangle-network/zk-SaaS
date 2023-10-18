@@ -79,7 +79,7 @@ jobs:
         with:
           toolchain: stable
           override: true
-      - name: Run ext wit bench
+      - name: Run ${{ matrix.example }} Example
         uses: actions-rs/cargo@v1
         with:
           command: run
