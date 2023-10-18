@@ -222,19 +222,17 @@ async fn main() {
             },
         )
         .await;
-    let mut a = <Bn254 as Pairing>::G1::zero();
-    let mut b = <Bn254 as Pairing>::G2::zero();
-    let mut c = <Bn254 as Pairing>::G1::zero();
+    let a = <Bn254 as Pairing>::G1::zero();
+    let b = <Bn254 as Pairing>::G2::zero();
+    let c = <Bn254 as Pairing>::G1::zero();
     for (i, (a_share, b_share, c_share)) in result.iter().enumerate() {
         debug!("Party:{}", i);
         debug!("a:{}", a_share);
         debug!("b:{}", b_share);
         debug!("c:{}", c_share);
         debug!("---------------------");
-        a += a_share;
-        b += b_share;
-        c += c_share;
     }
+    // TODO: construct the proof
     let proof = Proof::<Bn254> {
         a: a.into_affine(),
         b: b.into_affine(),
@@ -244,10 +242,15 @@ async fn main() {
     let verified = Groth16::<Bn254, CircomReduction>::verify_proof(
         &pvk,
         &proof,
-        &[BigInt!(
+        &[
+            // Out: hash (a29a8ad88fb0737bf459bcbdf05eb8a8d4aad5b097ed84c37f5de06faea1278b)
+            // BigInt("0x" + hash.slice(10)) = 72587776472194017031617589674261467945970986113287823188107011979
+            // See: https://github.com/iden3/circomlib/blob/cff5ab6288b55ef23602221694a6a38a0239dcc0/test/sha256.js#L55-L74
+            BigInt!(
             "72587776472194017031617589674261467945970986113287823188107011979"
         )
-        .into()],
+            .into(),
+        ],
     )
     .unwrap();
     assert!(verified, "Proof verification failed!");
