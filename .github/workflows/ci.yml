@@ -71,7 +71,7 @@ jobs:
     strategy:
       matrix:
         # TODO: add dfft_test, dmsm_test
-        example: [ext_wit_bench, groth_bench, dpp_test, msm_bench, dmsm_bench, local_dfft_test]
+        example: [ext_wit_bench, groth_bench, dpp_test, msm_bench, dmsm_bench, local_dfft_test, sha256]
     steps:
       - uses: actions/checkout@v2
       - name: Setup Rust

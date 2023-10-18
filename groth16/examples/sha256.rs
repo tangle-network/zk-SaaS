@@ -4,7 +4,9 @@ use ark_bn254::{Bn254, Fr as Bn254Fr};
 use ark_circom::{CircomBuilder, CircomConfig, CircomReduction};
 use ark_crypto_primitives::snark::SNARK;
 use ark_ec::pairing::Pairing;
-use ark_groth16::Groth16;
+use ark_ec::CurveGroup;
+use ark_ff::BigInt;
+use ark_groth16::{Groth16, Proof};
 use ark_poly::Radix2EvaluationDomain;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem};
 use ark_std::Zero;
@@ -172,16 +174,16 @@ async fn main() {
 
     let n = 8;
     let cfg = CircomConfig::<Bn254>::new(
-        "../fixtures/sha256/sha256_js/sha256.wasm",
-        "../fixtures/sha256/sha256.r1cs",
+        "./fixtures/sha256/sha256_js/sha256.wasm",
+        "./fixtures/sha256/sha256.r1cs",
     )
     .unwrap();
     let mut builder = CircomBuilder::new(cfg);
     let rng = &mut ark_std::rand::thread_rng();
-    builder.push_input("a", 3);
-    builder.push_input("b", 11);
+    builder.push_input("a", 1);
+    builder.push_input("b", 2);
     let circuit = builder.setup();
-    let (pk, _vk) =
+    let (pk, vk) =
         Groth16::<Bn254, CircomReduction>::circuit_specific_setup(circuit, rng)
             .unwrap();
 
@@ -213,7 +215,6 @@ async fn main() {
             (crs_shares, pp, qap, a_shares),
             |mut net, (crs_shares, pp, qap, a_shares)| async move {
                 let cd = ConstraintDomain::<Bn254Fr>::new(32768);
-                log::debug!("Running for party: {}", net.party_id());
                 let crs_share =
                     crs_shares.get(net.party_id() as usize).unwrap();
                 let a_share = a_shares[net.party_id() as usize].clone();
@@ -221,11 +222,33 @@ async fn main() {
             },
         )
         .await;
-    for (i, (a, b, c)) in result.iter().enumerate() {
+    let mut a = <Bn254 as Pairing>::G1::zero();
+    let mut b = <Bn254 as Pairing>::G2::zero();
+    let mut c = <Bn254 as Pairing>::G1::zero();
+    for (i, (a_share, b_share, c_share)) in result.iter().enumerate() {
         debug!("Party:{}", i);
-        debug!("a:{}", a);
-        debug!("b:{}", b);
-        debug!("c:{}", c);
+        debug!("a:{}", a_share);
+        debug!("b:{}", b_share);
+        debug!("c:{}", c_share);
         debug!("---------------------");
+        a += a_share;
+        b += b_share;
+        c += c_share;
     }
+    let proof = Proof::<Bn254> {
+        a: a.into_affine(),
+        b: b.into_affine(),
+        c: c.into_affine(),
+    };
+    let pvk = ark_groth16::verifier::prepare_verifying_key(&vk);
+    let verified = Groth16::<Bn254, CircomReduction>::verify_proof(
+        &pvk,
+        &proof,
+        &[BigInt!(
+            "72587776472194017031617589674261467945970986113287823188107011979"
+        )
+        .into()],
+    )
+    .unwrap();
+    assert!(verified, "Proof verification failed!");
 }
