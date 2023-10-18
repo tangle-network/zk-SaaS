@@ -234,20 +234,24 @@ impl MpcNet for ProdNet {
         self.connections.is_init()
     }
 
-    async fn send_bytes_to_king(
+    async fn client_send_or_king_receive(
         &self,
         bytes: &[u8],
         sid: MultiplexedStreamID,
     ) -> Result<Option<Vec<Bytes>>, MpcNetError> {
-        self.connections.send_bytes_to_king(bytes, sid).await
+        self.connections
+            .client_send_or_king_receive(bytes, sid)
+            .await
     }
 
-    async fn recv_bytes_from_king(
+    async fn client_receive_or_king_send(
         &self,
         bytes: Option<Vec<Bytes>>,
         sid: MultiplexedStreamID,
     ) -> Result<Bytes, MpcNetError> {
-        self.connections.recv_bytes_from_king(bytes, sid).await
+        self.connections
+            .client_receive_or_king_send(bytes, sid)
+            .await
     }
 }
 
@@ -346,7 +350,10 @@ mod test {
                 let my_id = net.party_id();
                 let bytes = bincode2::serialize(&my_id).unwrap();
                 if let Some(king_recv) = net
-                    .send_bytes_to_king(&bytes, MultiplexedStreamID::Zero)
+                    .client_send_or_king_receive(
+                        &bytes,
+                        MultiplexedStreamID::Zero,
+                    )
                     .await
                     .unwrap()
                 {
@@ -362,7 +369,7 @@ mod test {
                     let send = (0..(N_PEERS + 1))
                         .map(|_| bytes.clone().into())
                         .collect::<Vec<Bytes>>();
-                    net.recv_bytes_from_king(
+                    net.client_receive_or_king_send(
                         Some(send),
                         MultiplexedStreamID::Zero,
                     )
@@ -372,7 +379,10 @@ mod test {
                 } else {
                     assert_ne!(my_id, 0);
                     let bytes = net
-                        .recv_bytes_from_king(None, MultiplexedStreamID::Zero)
+                        .client_receive_or_king_send(
+                            None,
+                            MultiplexedStreamID::Zero,
+                        )
                         .await
                         .unwrap();
                     let sum: u32 = bincode2::deserialize(&bytes).unwrap();

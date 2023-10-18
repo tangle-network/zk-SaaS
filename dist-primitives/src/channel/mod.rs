@@ -12,7 +12,8 @@ pub trait MpcSerNet: MpcNet {
     ) -> Result<Option<Vec<T>>, MpcNetError> {
         let mut bytes_out = Vec::new();
         out.serialize_compressed(&mut bytes_out).unwrap();
-        let bytes_in = self.send_bytes_to_king(&bytes_out, sid).await?;
+        let bytes_in =
+            self.client_send_or_king_receive(&bytes_out, sid).await?;
 
         if let Some(bytes_in) = bytes_in {
             let results: Vec<Result<T, MpcNetError>> = bytes_in
@@ -51,7 +52,7 @@ pub trait MpcSerNet: MpcNet {
                 .collect()
         });
 
-        let bytes_in = self.recv_bytes_from_king(bytes, sid).await?;
+        let bytes_in = self.client_receive_or_king_send(bytes, sid).await?;
         Ok(T::deserialize_compressed(&bytes_in[..])?)
     }
 }

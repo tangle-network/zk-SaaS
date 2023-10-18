@@ -407,7 +407,7 @@ impl<IO: AsyncRead + AsyncWrite + Unpin + Send> MpcNet
         self.peers.iter().all(|r| r.1.streams.is_some())
     }
 
-    async fn send_bytes_to_king(
+    async fn client_send_or_king_receive(
         &self,
         bytes: &[u8],
         sid: MultiplexedStreamID,
@@ -415,7 +415,7 @@ impl<IO: AsyncRead + AsyncWrite + Unpin + Send> MpcNet
         self.send_to_king(bytes, sid).await
     }
 
-    async fn recv_bytes_from_king(
+    async fn client_receive_or_king_send(
         &self,
         bytes: Option<Vec<Bytes>>,
         sid: MultiplexedStreamID,
