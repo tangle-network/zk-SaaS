@@ -183,7 +183,6 @@ async fn fft2_with_rearrange_pad<F: FftField + PrimeField, Net: MpcSerNet>(
     // King applies FFT2 with rearrange
 
     let mbyl = px.len();
-    println!("mbyl: {}", mbyl);
 
     let communication_timer = start_timer!(|| "ComToKing");
     let received_shares = net.send_to_king(&px, sid).await?;

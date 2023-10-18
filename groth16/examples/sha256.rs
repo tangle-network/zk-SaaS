@@ -32,7 +32,7 @@ async fn dsha256<E: Pairing, Net: MpcNet>(
     a_share: &[E::ScalarField],
     cd: &ConstraintDomain<E::ScalarField>,
     net: &mut Net,
-) {
+) -> (E::G1, E::G2, E::G1) {
     // Add preprocessing vectors of size 4m/l
     // process u and v to get ready for multiplication
 
@@ -78,7 +78,7 @@ async fn dsha256<E: Pairing, Net: MpcNet>(
 
     let msm_section = start_timer!(|| "MSM operations");
     // Compute msm while dropping the base vectors as they are not used again
-    let _pi_a_share: E::G1 = dmsm::d_msm(
+    let pi_a_share: E::G1 = dmsm::d_msm(
         &crs_share.s,
         &a_share[..crs_share.s.len()],
         pp,
@@ -88,7 +88,7 @@ async fn dsha256<E: Pairing, Net: MpcNet>(
     .await
     .unwrap();
     println!("s done");
-    let _pi_b_share: E::G2 = dmsm::d_msm(
+    let pi_b_share: E::G2 = dmsm::d_msm(
         &crs_share.v,
         &a_share[..crs_share.v.len()],
         pp,
@@ -98,7 +98,7 @@ async fn dsha256<E: Pairing, Net: MpcNet>(
     .await
     .unwrap();
     println!("v done");
-    let _pi_c_share1: E::G1 = dmsm::d_msm(
+    let pi_c_share1: E::G1 = dmsm::d_msm(
         &crs_share.h,
         &a_share[..crs_share.h.len()],
         pp,
@@ -108,7 +108,7 @@ async fn dsha256<E: Pairing, Net: MpcNet>(
     .await
     .unwrap();
     println!("h done");
-    let _pi_c_share2: E::G1 = dmsm::d_msm(
+    let pi_c_share2: E::G1 = dmsm::d_msm(
         &crs_share.w,
         &a_share[..crs_share.w.len()],
         pp,
@@ -118,7 +118,7 @@ async fn dsha256<E: Pairing, Net: MpcNet>(
     .await
     .unwrap();
     println!("w done");
-    let _pi_c_share3: E::G1 = dmsm::d_msm(
+    let pi_c_share3: E::G1 = dmsm::d_msm(
         &crs_share.u,
         &h_share[..crs_share.u.len()],
         pp,
@@ -128,11 +128,12 @@ async fn dsha256<E: Pairing, Net: MpcNet>(
     .await
     .unwrap();
     println!("u done");
-    let _pi_c_share: E::G1 = _pi_c_share1 + _pi_c_share2 + _pi_c_share3; //Additive notation for groups
-                                                                         // Send _pi_a_share, _pi_b_share, _pi_c_share to client
+    let pi_c_share: E::G1 = pi_c_share1 + pi_c_share2 + pi_c_share3; //Additive notation for groups
     end_timer!(msm_section);
 
     debug!("Done");
+    // Send pi_a_share, pi_b_share, pi_c_share to client
+    (pi_a_share, pi_b_share, pi_c_share)
 }
 
 fn pack_from_witness<E: Pairing>(
@@ -207,7 +208,7 @@ async fn main() {
     let a_shares = pack_from_witness::<Bn254>(n, &pp, full_assignment);
     let network = Net::new_local_testnet(n).await.unwrap();
 
-    network
+    let result = network
         .simulate_network_round(
             (crs_shares, pp, qap, a_shares),
             |mut net, (crs_shares, pp, qap, a_shares)| async move {
@@ -216,8 +217,15 @@ async fn main() {
                 let crs_share =
                     crs_shares.get(net.party_id() as usize).unwrap();
                 let a_share = a_shares[net.party_id() as usize].clone();
-                dsha256(&pp, crs_share, qap, &a_share, &cd, &mut net).await;
+                dsha256(&pp, crs_share, qap, &a_share, &cd, &mut net).await
             },
         )
         .await;
+    for (i, (a, b, c)) in result.iter().enumerate() {
+        debug!("Party:{}", i);
+        debug!("a:{}", a);
+        debug!("b:{}", b);
+        debug!("c:{}", c);
+        debug!("---------------------");
+    }
 }
