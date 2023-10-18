@@ -7,7 +7,8 @@ use ark_ec::pairing::Pairing;
 use ark_groth16::Groth16;
 use ark_poly::Radix2EvaluationDomain;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem};
-use ark_std::{end_timer, start_timer};
+use ark_std::Zero;
+use ark_std::{cfg_chunks, cfg_into_iter, end_timer, start_timer};
 use dist_primitives::dmsm;
 use log::debug;
 use mpc_net::{LocalTestNet as Net, MpcNet, MultiplexedStreamID};
@@ -17,6 +18,9 @@ use secret_sharing::pss::PackedSharingParams;
 use groth16::{
     ext_wit::d_ext_wit, proving_key::PackedProvingKeyShare, ConstraintDomain,
 };
+
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 async fn dsha256<E: Pairing, Net: MpcNet>(
     pp: &PackedSharingParams<E::ScalarField>,
@@ -131,6 +135,36 @@ async fn dsha256<E: Pairing, Net: MpcNet>(
     debug!("Done");
 }
 
+fn pack_from_witness<E: Pairing>(
+    n: usize,
+    pp: &PackedSharingParams<E::ScalarField>,
+    mut full_assignment: Vec<E::ScalarField>,
+) -> Vec<Vec<E::ScalarField>> {
+    // ensure that full assignment is divisible by l
+    // by padding with zeros if necessary.
+    let full_assignment_len = full_assignment.len();
+    let remainder = full_assignment_len % pp.l;
+    let full_assignment = if remainder != 0 {
+        // push zero element to make it divisible by l
+        full_assignment
+            .extend_from_slice(&vec![E::ScalarField::zero(); pp.l - remainder]);
+        full_assignment
+    } else {
+        full_assignment
+    };
+    let packed_assignments = cfg_chunks!(full_assignment, pp.l)
+        .map(|chunk| pp.pack_from_public(chunk.to_vec()))
+        .collect::<Vec<_>>();
+
+    cfg_into_iter!(0..n)
+        .map(|i| {
+            cfg_into_iter!(0..packed_assignments.len())
+                .map(|j| packed_assignments[j][i])
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
 #[tokio::main]
 async fn main() {
     env_logger::builder().format_timestamp(None).init();
@@ -169,18 +203,19 @@ async fn main() {
             &pk, n, pp_g1, pp_g2,
         );
     let crs_shares = Arc::new(crs_shares);
+    let pp = PackedSharingParams::<Bn254Fr>::new(2);
+    let a_shares = pack_from_witness::<Bn254>(n, &pp, full_assignment);
     let network = Net::new_local_testnet(n).await.unwrap();
 
     network
         .simulate_network_round(
-            (crs_shares, qap, full_assignment),
-            |mut net, (crs_shares, qap, a_share)| async move {
-                let pp = PackedSharingParams::<Bn254Fr>::new(2);
+            (crs_shares, pp, qap, a_shares),
+            |mut net, (crs_shares, pp, qap, a_shares)| async move {
                 let cd = ConstraintDomain::<Bn254Fr>::new(32768);
                 log::debug!("Running for party: {}", net.party_id());
                 let crs_share =
                     crs_shares.get(net.party_id() as usize).unwrap();
-
+                let a_share = a_shares[net.party_id() as usize].clone();
                 dsha256(&pp, crs_share, qap, &a_share, &cd, &mut net).await;
             },
         )
