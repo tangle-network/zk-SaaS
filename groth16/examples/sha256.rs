@@ -5,7 +5,7 @@ use ark_circom::{CircomBuilder, CircomConfig, CircomReduction};
 use ark_crypto_primitives::snark::SNARK;
 use ark_ec::pairing::Pairing;
 use ark_ec::CurveGroup;
-use ark_ff::BigInt;
+use ark_ff::MontFp;
 use ark_groth16::{Groth16, Proof};
 use ark_poly::Radix2EvaluationDomain;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem};
@@ -239,18 +239,12 @@ async fn main() {
         c: c.into_affine(),
     };
     let pvk = ark_groth16::verifier::prepare_verifying_key(&vk);
-    let verified = Groth16::<Bn254, CircomReduction>::verify_proof(
+    let verified = Groth16::<Bn254, CircomReduction>::verify_with_processed_vk(
         &pvk,
-        &proof,
-        &[
-            // Out: hash (a29a8ad88fb0737bf459bcbdf05eb8a8d4aad5b097ed84c37f5de06faea1278b)
-            // BigInt("0x" + hash.slice(10)) = 72587776472194017031617589674261467945970986113287823188107011979
-            // See: https://github.com/iden3/circomlib/blob/cff5ab6288b55ef23602221694a6a38a0239dcc0/test/sha256.js#L55-L74
-            BigInt!(
+        &[MontFp!(
             "72587776472194017031617589674261467945970986113287823188107011979"
-        )
-            .into(),
-        ],
+        )],
+        &proof,
     )
     .unwrap();
     assert!(verified, "Proof verification failed!");
