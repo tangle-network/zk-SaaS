@@ -67,7 +67,7 @@ async fn dsha256<E: Pairing, Net: MpcNet>(
         d_ext_wit(qap.a, qap.b, qap.c, rng, pp, cd, net)
             .await
             .unwrap();
-    println!(
+    debug!(
         "s:{}, v:{}, h:{}, w:{}, u:{}, a:{}, h:{}",
         crs_share.s.len(),
         crs_share.v.len(),
@@ -89,7 +89,7 @@ async fn dsha256<E: Pairing, Net: MpcNet>(
     )
     .await
     .unwrap();
-    println!("s done");
+    debug!("s done");
     let pi_b_share: E::G2 = dmsm::d_msm(
         &crs_share.v,
         &a_share[..crs_share.v.len()],
@@ -99,7 +99,7 @@ async fn dsha256<E: Pairing, Net: MpcNet>(
     )
     .await
     .unwrap();
-    println!("v done");
+    debug!("v done");
     let pi_c_share1: E::G1 = dmsm::d_msm(
         &crs_share.h,
         &a_share[..crs_share.h.len()],
@@ -109,7 +109,7 @@ async fn dsha256<E: Pairing, Net: MpcNet>(
     )
     .await
     .unwrap();
-    println!("h done");
+    debug!("h done");
     let pi_c_share2: E::G1 = dmsm::d_msm(
         &crs_share.w,
         &a_share[..crs_share.w.len()],
@@ -119,7 +119,7 @@ async fn dsha256<E: Pairing, Net: MpcNet>(
     )
     .await
     .unwrap();
-    println!("w done");
+    debug!("w done");
     let pi_c_share3: E::G1 = dmsm::d_msm(
         &crs_share.u,
         &h_share[..crs_share.u.len()],
@@ -129,7 +129,7 @@ async fn dsha256<E: Pairing, Net: MpcNet>(
     )
     .await
     .unwrap();
-    println!("u done");
+    debug!("u done");
     let pi_c_share: E::G1 = pi_c_share1 + pi_c_share2 + pi_c_share3; //Additive notation for groups
     end_timer!(msm_section);
 
@@ -222,9 +222,9 @@ async fn main() {
             },
         )
         .await;
-    let a = <Bn254 as Pairing>::G1::zero();
-    let b = <Bn254 as Pairing>::G2::zero();
-    let c = <Bn254 as Pairing>::G1::zero();
+    let a = result[0].0;
+    let b = result[0].1;
+    let c = result[0].2;
     for (i, (a_share, b_share, c_share)) in result.iter().enumerate() {
         debug!("Party:{}", i);
         debug!("a:{}", a_share);
