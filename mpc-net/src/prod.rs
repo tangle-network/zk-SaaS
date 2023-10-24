@@ -342,8 +342,7 @@ mod test {
         const N_PEERS: usize = 4;
         let nodes = init_network(N_PEERS).await;
         let testnet = LocalTestNetProd { nodes };
-        let expected_result: u32 =
-            (0..=N_PEERS).into_iter().map(|r| r as u32).sum();
+        let expected_result: u32 = (0..=N_PEERS).map(|r| r as u32).sum();
 
         let sums = testnet
             .simulate_network_round(|net| async move {

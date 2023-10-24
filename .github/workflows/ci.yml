@@ -78,7 +78,7 @@ jobs:
         with:
           toolchain: stable
           override: true
-      - name: Run test
+      - name: Run ${{ matrix.example }} Example
         uses: actions-rs/cargo@v1
         with:
           command: run

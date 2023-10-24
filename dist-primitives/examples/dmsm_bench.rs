@@ -40,15 +40,13 @@ async fn main() {
     let network = Net::new_local_testnet(4).await.unwrap();
 
     network
-        .simulate_network_round(|mut net| async move {
+        .simulate_network_round((), |net, _| async move {
             let pp = PackedSharingParams::<Fr>::new(2);
             for i in 10..20 {
                 let dom = Radix2EvaluationDomain::<Fr>::new(1 << i).unwrap();
                 println!("domain size: {}", dom.size());
-                d_msm_test::<ark_bls12_377::G1Projective, _>(
-                    &pp, &dom, &mut net,
-                )
-                .await;
+                d_msm_test::<ark_bls12_377::G1Projective, _>(&pp, &dom, &net)
+                    .await;
             }
         })
         .await;
