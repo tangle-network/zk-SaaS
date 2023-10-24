@@ -72,7 +72,7 @@ pub async fn d_msm<G: CurveGroup, Net: MpcSerNet>(
     // Eventually we do have to convert to Projective but this will be pp.l group elements instead of m()
 
     // First round of local computation done by parties
-    println!("bases: {}, scalars: {}", bases.len(), scalars.len());
+    log::debug!("bases: {}, scalars: {}", bases.len(), scalars.len());
     let c_share = G::msm(bases, scalars).unwrap();
     // Now we do degree reduction -- psstoss
     // Send to king who reduces and sends shamir shares (not packed).

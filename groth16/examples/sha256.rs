@@ -28,6 +28,7 @@ async fn dsha256<E: Pairing, Net: MpcNet>(
     pp: &PackedSharingParams<E::ScalarField>,
     crs_share: &PackedProvingKeyShare<E>,
     a_share: &[E::ScalarField],
+    ax_share: &[E::ScalarField],
     h_share: &[E::ScalarField],
     net: &mut Net,
 ) -> (E::G1, E::G2, E::G1) {
@@ -44,31 +45,42 @@ async fn dsha256<E: Pairing, Net: MpcNet>(
 
     let msm_section = start_timer!(|| "MSM operations");
     // Compute msm while dropping the base vectors as they are not used again
+    let compute_a = start_timer!(|| "Compute A");
     let pi_a_share: E::G1 =
         dmsm::d_msm(&crs_share.s, a_share, pp, net, MultiplexedStreamID::One)
             .await
             .unwrap();
+    end_timer!(compute_a);
+
+    let compute_b = start_timer!(|| "Compute B");
     let pi_b_share: E::G2 =
         dmsm::d_msm(&crs_share.v, a_share, pp, net, MultiplexedStreamID::One)
             .await
             .unwrap();
+    end_timer!(compute_b);
+
+    let compute_c = start_timer!(|| "Compute C");
+    // NOTE: Commented out since `r` is zero, hence there is no need
+    // to compute b_g1_query. instead we are using zero.
     // let pi_c_share1: E::G1 =
     //     dmsm::d_msm(&crs_share.h, a_share, pp, net, MultiplexedStreamID::One)
     //         .await
     //         .unwrap();
-    // let pi_c_share2: E::G1 =
-    //     dmsm::d_msm(&crs_share.w, a_share, pp, net, MultiplexedStreamID::One)
-    //         .await
-    //         .unwrap();
-    // let pi_c_share3: E::G1 =
-    //     dmsm::d_msm(&crs_share.u, h_share, pp, net, MultiplexedStreamID::One)
-    //         .await
-    //         .unwrap();
-    // let pi_c_share: E::G1 = pi_c_share1 + pi_c_share2 + pi_c_share3; //Additive notation for groups
+    let pi_c_share1 = E::G1::zero();
+    let pi_c_share2: E::G1 =
+        dmsm::d_msm(&crs_share.w, ax_share, pp, net, MultiplexedStreamID::One)
+            .await
+            .unwrap();
+    let pi_c_share3: E::G1 =
+        dmsm::d_msm(&crs_share.u, h_share, pp, net, MultiplexedStreamID::One)
+            .await
+            .unwrap();
+    let pi_c_share: E::G1 = pi_c_share1 + pi_c_share2 + pi_c_share3;
+    end_timer!(compute_c);
+
     end_timer!(msm_section);
 
     // Send pi_a_share, pi_b_share, pi_c_share to client
-    let pi_c_share = E::G1::zero();
     (pi_a_share, pi_b_share, pi_c_share)
 }
 
@@ -77,7 +89,16 @@ fn pack_from_witness<E: Pairing>(
     full_assignment: Vec<E::ScalarField>,
 ) -> Vec<Vec<E::ScalarField>> {
     let packed_assignments = cfg_chunks!(full_assignment, pp.l)
-        .map(|chunk| pp.pack_from_public(chunk.to_vec()))
+        .map(|chunk| {
+            let secrets = if chunk.len() < pp.l {
+                let mut secrets = chunk.to_vec();
+                secrets.resize(pp.l, E::ScalarField::zero());
+                secrets
+            } else {
+                chunk.to_vec()
+            };
+            pp.pack_from_public(secrets)
+        })
         .collect::<Vec<_>>();
 
     cfg_into_iter!(0..pp.n)
@@ -142,6 +163,8 @@ async fn main() {
             &pk, pp_g1, pp_g2,
         );
     let crs_shares = Arc::new(crs_shares);
+    let aux_assignment = &full_assignment[num_inputs..];
+    let ax_shares = pack_from_witness::<Bn254>(&pp, aux_assignment.to_vec());
     let a_shares =
         pack_from_witness::<Bn254>(&pp, full_assignment[1..].to_vec());
     let h_shares = pack_from_witness::<Bn254>(&pp, h);
@@ -149,13 +172,14 @@ async fn main() {
 
     let result = network
         .simulate_network_round(
-            (crs_shares, pp, a_shares, h_shares),
-            |mut net, (crs_shares, pp, a_shares, h_shares)| async move {
+            (crs_shares, pp, a_shares, ax_shares, h_shares),
+            |mut net, (crs_shares, pp, a_shares, ax_shares, h_shares)| async move {
                 let crs_share =
                     crs_shares.get(net.party_id() as usize).unwrap();
                 let a_share = &a_shares[net.party_id() as usize];
+                let ax_share = &ax_shares[net.party_id() as usize];
                 let h_share = &h_shares[net.party_id() as usize];
-                dsha256(&pp, crs_share, a_share, h_share, &mut net).await
+                dsha256(&pp, crs_share, a_share, ax_share, h_share, &mut net).await
             },
         )
         .await;
@@ -187,8 +211,7 @@ async fn main() {
     let proof = Proof::<Bn254> {
         a: a.into_affine(),
         b: b.into_affine(),
-        // TODO: replace this with the actual c from our computation
-        c: arkworks_proof.c,
+        c: c.into_affine(),
     };
     let verified = Groth16::<Bn254, CircomReduction>::verify_with_processed_vk(
         &pvk,
