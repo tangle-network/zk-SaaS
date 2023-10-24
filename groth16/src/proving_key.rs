@@ -50,7 +50,6 @@ where
             .map(Into::into)
             .collect::<Vec<_>>();
         let pre_packed_u = cfg_into_iter!(pk.h_query.clone())
-            .skip(1)
             .map(Into::into)
             .collect::<Vec<_>>();
         let pre_packed_w = cfg_into_iter!(pk.l_query.clone())
