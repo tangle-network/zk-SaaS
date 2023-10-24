@@ -5,9 +5,9 @@ use ark_circom::{CircomBuilder, CircomConfig, CircomReduction};
 use ark_crypto_primitives::snark::SNARK;
 use ark_ec::pairing::Pairing;
 use ark_ec::CurveGroup;
-use ark_ff::MontFp;
+use ark_ff::{BigInt, MontFp};
 use ark_groth16::{Groth16, Proof};
-use ark_poly::Radix2EvaluationDomain;
+use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem};
 use ark_std::Zero;
 use ark_std::{cfg_chunks, cfg_into_iter, end_timer, start_timer};
@@ -68,7 +68,7 @@ async fn dsha256<E: Pairing, Net: MpcNet>(
             .await
             .unwrap();
     debug!(
-        "s:{}, v:{}, h:{}, w:{}, u:{}, a:{}, h:{}",
+        "s:{}, v:{}, h:{}, w:{}, u:{}, a_share:{}, h_share:{}",
         crs_share.s.len(),
         crs_share.v.len(),
         crs_share.h.len(),
@@ -80,25 +80,15 @@ async fn dsha256<E: Pairing, Net: MpcNet>(
 
     let msm_section = start_timer!(|| "MSM operations");
     // Compute msm while dropping the base vectors as they are not used again
-    let pi_a_share: E::G1 = dmsm::d_msm(
-        &crs_share.s,
-        &a_share[..crs_share.s.len()],
-        pp,
-        net,
-        MultiplexedStreamID::One,
-    )
-    .await
-    .unwrap();
+    let pi_a_share: E::G1 =
+        dmsm::d_msm(&crs_share.s, a_share, pp, net, MultiplexedStreamID::One)
+            .await
+            .unwrap();
     debug!("s done");
-    let pi_b_share: E::G2 = dmsm::d_msm(
-        &crs_share.v,
-        &a_share[..crs_share.v.len()],
-        pp,
-        net,
-        MultiplexedStreamID::One,
-    )
-    .await
-    .unwrap();
+    let pi_b_share: E::G2 =
+        dmsm::d_msm(&crs_share.v, a_share, pp, net, MultiplexedStreamID::One)
+            .await
+            .unwrap();
     debug!("v done");
     let pi_c_share1: E::G1 = dmsm::d_msm(
         &crs_share.h,
@@ -214,7 +204,7 @@ async fn main() {
         .simulate_network_round(
             (crs_shares, pp, qap, a_shares),
             |mut net, (crs_shares, pp, qap, a_shares)| async move {
-                let cd = ConstraintDomain::<Bn254Fr>::new(32768);
+                let cd = ConstraintDomain::new(qap.domain.size());
                 let crs_share =
                     crs_shares.get(net.party_id() as usize).unwrap();
                 let a_share = a_shares[net.party_id() as usize].clone();
@@ -241,9 +231,10 @@ async fn main() {
     let pvk = ark_groth16::verifier::prepare_verifying_key(&vk);
     let verified = Groth16::<Bn254, CircomReduction>::verify_with_processed_vk(
         &pvk,
-        &[MontFp!(
+        &[BigInt!(
             "72587776472194017031617589674261467945970986113287823188107011979"
-        )],
+        )
+        .into()],
         &proof,
     )
     .unwrap();

@@ -83,6 +83,7 @@ pub async fn d_msm<G: CurveGroup, Net: MpcSerNet>(
         .send_to_king(&c_share, sid)
         .await?
         .map(|shares: Vec<G>| {
+            // TODO: Mask with random values.
             let output: G = unpackexp(shares, true, pp, &net).iter().sum();
             vec![output; n_parties]
         });
