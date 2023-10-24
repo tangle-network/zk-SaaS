@@ -34,7 +34,6 @@ where
     /// Each party will hold one share per PSS chunk.
     pub fn pack_from_arkworks_proving_key(
         pk: &ark_groth16::ProvingKey<E>,
-        n_parties: usize,
         pp_g1: PackedSharingParams<
             <<E as Pairing>::G1Affine as AffineRepr>::ScalarField,
         >,
@@ -44,20 +43,25 @@ where
     ) -> Vec<Self> {
         assert!(pp_g1.l == pp_g2.l);
         assert!(pp_g1.n == pp_g2.n);
+        let n = pp_g1.n;
 
         let pre_packed_s = cfg_into_iter!(pk.a_query.clone())
+            .skip(1)
             .map(Into::into)
             .collect::<Vec<_>>();
         let pre_packed_u = cfg_into_iter!(pk.h_query.clone())
+            .skip(1)
             .map(Into::into)
             .collect::<Vec<_>>();
         let pre_packed_w = cfg_into_iter!(pk.l_query.clone())
             .map(Into::into)
             .collect::<Vec<_>>();
         let pre_packed_h = cfg_into_iter!(pk.b_g1_query.clone())
+            .skip(1)
             .map(Into::into)
             .collect::<Vec<_>>();
         let pre_packed_v = cfg_into_iter!(pk.b_g2_query.clone())
+            .skip(1)
             .map(Into::into)
             .collect::<Vec<_>>();
 
@@ -77,7 +81,7 @@ where
             .map(|chunk| packexp_from_public::<E::G2>(chunk, &pp_g2))
             .collect::<Vec<_>>();
 
-        cfg_into_iter!(0..n_parties)
+        cfg_into_iter!(0..n)
             .map(|i| {
                 let s_shares = cfg_into_iter!(0..packed_s.len())
                     .map(|j| packed_s[j][i].into())
@@ -183,10 +187,9 @@ mod tests {
             .unwrap();
         let pp_g1 = PackedSharingParams::new(4);
         let pp_g2 = PackedSharingParams::new(4);
-        let n = 8;
         let shares =
             PackedProvingKeyShare::<Bn254>::pack_from_arkworks_proving_key(
-                &pk, n, pp_g1, pp_g2,
+                &pk, pp_g1, pp_g2,
             );
         eprintln!("shares: {:?}", shares);
         // Do something with the shares
