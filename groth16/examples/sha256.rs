@@ -72,7 +72,7 @@ async fn dsha256<E: Pairing, Net: MpcNet>(
             .await
             .unwrap();
     let pi_c_share3: E::G1 =
-        dmsm::d_msm(&crs_share.u, h_share, pp, net, MultiplexedStreamID::One)
+        dmsm::d_msm(&crs_share.u, h_share, pp, net, MultiplexedStreamID::Zero)
             .await
             .unwrap();
     let pi_c_share: E::G1 = pi_c_share1 + pi_c_share2 + pi_c_share3;
