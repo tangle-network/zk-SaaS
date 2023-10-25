@@ -2,7 +2,8 @@ use ark_ff::PrimeField;
 use ark_groth16::r1cs_to_qap::evaluate_constraint;
 use ark_poly::EvaluationDomain;
 use ark_relations::r1cs::{ConstraintMatrices, SynthesisError};
-use ark_std::{cfg_iter, cfg_iter_mut, vec};
+use ark_std::{cfg_chunks, cfg_into_iter, cfg_iter, cfg_iter_mut, vec};
+use secret_sharing::pss::PackedSharingParams;
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -21,6 +22,58 @@ pub struct QAP<F: PrimeField, D: EvaluationDomain<F>> {
     pub c: Vec<F>,
     /// Evaluation domain of the QAP.
     pub domain: D,
+}
+
+#[derive(Debug, Clone)]
+pub struct PackedQAPShare<F: PrimeField> {
+    pub num_inputs: usize,
+    pub num_constraints: usize,
+    /// A is also called P in the paper.
+    pub a: Vec<F>,
+    /// B is also called Q in the paper.
+    pub b: Vec<F>,
+    /// C is also called W in the paper.
+    pub c: Vec<F>,
+}
+
+impl<F: PrimeField, D: EvaluationDomain<F>> QAP<F, D> {
+    pub fn pss(&self, pp: &PackedSharingParams<F>) -> Vec<PackedQAPShare<F>> {
+        let num_inputs = self.num_inputs;
+        let num_constraints = self.num_constraints;
+
+        let packed_a = cfg_chunks!(self.a, pp.l)
+            .map(|chunk| pp.pack_from_public(chunk.to_vec()))
+            .collect::<Vec<_>>();
+
+        let packed_b = cfg_chunks!(self.b, pp.l)
+            .map(|chunk| pp.pack_from_public(chunk.to_vec()))
+            .collect::<Vec<_>>();
+
+        let packed_c = cfg_chunks!(self.c, pp.l)
+            .map(|chunk| pp.pack_from_public(chunk.to_vec()))
+            .collect::<Vec<_>>();
+
+        cfg_into_iter!(0..pp.n)
+            .map(|i| {
+                let a = cfg_into_iter!(0..packed_a.len())
+                    .map(|j| packed_a[j][i])
+                    .collect::<Vec<_>>();
+                let b = cfg_into_iter!(0..packed_b.len())
+                    .map(|j| packed_b[j][i])
+                    .collect::<Vec<_>>();
+                let c = cfg_into_iter!(0..packed_c.len())
+                    .map(|j| packed_c[j][i])
+                    .collect::<Vec<_>>();
+                PackedQAPShare {
+                    num_inputs,
+                    num_constraints,
+                    a,
+                    b,
+                    c,
+                }
+            })
+            .collect::<Vec<_>>()
+    }
 }
 
 pub fn qap<F: PrimeField, D: EvaluationDomain<F>>(
@@ -61,25 +114,6 @@ pub fn qap<F: PrimeField, D: EvaluationDomain<F>>(
         .for_each(|((c_i, &a), &b)| {
             *c_i = a * b;
         });
-
-    domain.ifft_in_place(&mut a);
-    domain.ifft_in_place(&mut b);
-    domain.ifft_in_place(&mut c);
-
-    let root_of_unity = {
-        let domain_size_double = 2 * domain_size;
-        let domain_double = D::new(domain_size_double)
-            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
-        domain_double.element(1)
-    };
-
-    D::distribute_powers_and_mul_by_const(&mut a, root_of_unity, F::one());
-    D::distribute_powers_and_mul_by_const(&mut b, root_of_unity, F::one());
-    D::distribute_powers_and_mul_by_const(&mut c, root_of_unity, F::one());
-
-    domain.fft_in_place(&mut a);
-    domain.fft_in_place(&mut b);
-    domain.fft_in_place(&mut c);
 
     Ok(QAP {
         num_inputs,

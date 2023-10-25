@@ -12,6 +12,7 @@ use async_smux::{MuxBuilder, MuxStream};
 use async_trait::async_trait;
 use futures::stream::{FuturesOrdered, FuturesUnordered};
 use futures::{SinkExt, StreamExt, TryStreamExt};
+use log::trace;
 use parking_lot::Mutex;
 use tokio::sync::Mutex as TokioMutex;
 use tokio_util::bytes::Bytes;
@@ -144,7 +145,7 @@ impl MpcNetConnection<TcpStream> {
                     multiplex_stream(MULTIPLEXED_STREAMS, true, stream).await?;
                 new_peers_server.lock().get_mut(&peer_id).unwrap().streams =
                     Some(muxed);
-                println!("{my_id} connected to peer {peer_id}")
+                trace!("{my_id} connected to peer {peer_id}")
             }
 
             Ok::<_, MpcNetError>(())
@@ -177,18 +178,18 @@ impl MpcNetConnection<TcpStream> {
                     .get_mut(&next_peer_to_connect_to)
                     .unwrap()
                     .streams = Some(muxed);
-                println!("{my_id} connected to peer {next_peer_to_connect_to}")
+                trace!("{my_id} connected to peer {next_peer_to_connect_to}")
             }
 
             Ok::<_, MpcNetError>(())
         };
 
-        println!("Awaiting on client and server task to finish");
+        trace!("Awaiting on client and server task to finish");
 
         tokio::try_join!(server_task, client_task)?;
         self.peers = Arc::try_unwrap(new_peers).unwrap().into_inner();
 
-        println!("All connected");
+        trace!("All connected");
 
         // Every party will use this channel for genesis
         let genesis_round_channel = MultiplexedStreamID::Zero;
@@ -212,7 +213,7 @@ impl MpcNetConnection<TcpStream> {
             }
         }
 
-        println!("Done with recv_from_king");
+        trace!("Done with recv_from_king");
         Ok(())
     }
 }
@@ -355,7 +356,7 @@ impl LocalTestNet {
         }
 
         // Step 3: Connect peers to each other
-        println!("Now running init");
+        trace!("Now running init");
         let futures = FuturesUnordered::new();
         for (peer_id, mut connections) in nodes.into_iter() {
             futures.push(Box::pin(async move {
