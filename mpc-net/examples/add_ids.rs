@@ -186,7 +186,6 @@ fn load_cert(
 
 fn get_certs(path: &PathBuf) -> Result<Vec<Certificate>, Box<dyn Error>> {
     let bytes = std::fs::read(path)?;
-    //let certs = rustls_pemfile::certs(&mut reader)?;
     Ok(vec![Certificate(bytes)])
 }
 
