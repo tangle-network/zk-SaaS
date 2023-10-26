@@ -90,12 +90,29 @@ impl HasPeerAddr for TlsStream<TcpStream> {
     }
 }
 
+/// This should be implemented for transports that are encrypted
+pub trait IsTransportEncrypted {}
+impl IsTransportEncrypted for TlsStream<TcpStream> {}
+
 pub trait IOStream:
-    AsyncWrite + AsyncRead + HasPeerAddr + Unpin + Send + 'static
+    AsyncWrite
+    + AsyncRead
+    + HasPeerAddr
+    + IsTransportEncrypted
+    + Unpin
+    + Send
+    + 'static
 {
 }
-impl<T: AsyncWrite + AsyncRead + HasPeerAddr + Unpin + Send + 'static> IOStream
-    for T
+impl<
+        T: AsyncWrite
+            + AsyncRead
+            + HasPeerAddr
+            + IsTransportEncrypted
+            + Unpin
+            + Send
+            + 'static,
+    > IOStream for T
 {
 }
 
@@ -400,6 +417,8 @@ mod test {
         tx: tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
         rx: tokio::sync::mpsc::UnboundedReceiver<Vec<u8>>,
     }
+
+    impl IsTransportEncrypted for ChannelIO {}
 
     impl HasPeerAddr for ChannelIO {
         fn peer_addr(&self) -> Result<SocketAddr, MpcNetError> {
