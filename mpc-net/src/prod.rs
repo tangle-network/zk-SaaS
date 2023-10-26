@@ -469,6 +469,15 @@ mod test {
         add_protocol_inner(testnet, expected_result, N_PEERS).await;
     }
 
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_exchange_of_data_sum_all_ids2() {
+        const N_PEERS: usize = 4;
+        let nodes = init_network_channels(N_PEERS).await;
+        let testnet = LocalTestNetProd { nodes };
+        let expected_result: u32 = (0..=N_PEERS).map(|r| r as u32).sum();
+        add_protocol_inner(testnet, expected_result, N_PEERS).await;
+    }
+
     async fn add_protocol_inner<T: IOStream>(
         testnet: LocalTestNetProd<T>,
         expected_result: u32,
@@ -583,6 +592,48 @@ mod test {
         }
 
         let peers = peers.try_collect::<Vec<_>>();
+
+        let (r_server, mut r_clients) = tokio::try_join!(king, peers).unwrap();
+        r_clients.push(r_server.unwrap());
+        r_clients
+    }
+
+    async fn init_network_channels(n_peers: usize) -> Vec<ProdNet<ChannelIO>> {
+        let n_parties = n_peers + 1;
+        let mut king_conns = vec![];
+        let mut peer_nets = vec![];
+
+        for _ in 0..n_peers {
+            let (to_peer, from_king) = tokio::sync::mpsc::unbounded_channel();
+            let (to_king, from_peer) = tokio::sync::mpsc::unbounded_channel();
+            let king = ChannelIO {
+                tx: to_peer,
+                rx: from_peer,
+            };
+            king_conns.push(king);
+            let peer = ChannelIO {
+                tx: to_king,
+                rx: from_king,
+            };
+            peer_nets.push(peer);
+        }
+
+        let king = tokio::spawn(ProdNet::new_from_pre_existing_connection(
+            0, n_parties, king_conns,
+        ))
+        .map_err(|err| MpcNetError::Generic(err.to_string()));
+
+        let peer_nets_futures = FuturesUnordered::new();
+        for (i, king_io) in peer_nets.into_iter().enumerate() {
+            let peer_net = ProdNet::new_from_pre_existing_connection(
+                (i + 1) as u32,
+                n_parties,
+                vec![king_io],
+            );
+            peer_nets_futures.push(Box::pin(peer_net));
+        }
+
+        let peers = peer_nets_futures.try_collect::<Vec<_>>();
 
         let (r_server, mut r_clients) = tokio::try_join!(king, peers).unwrap();
         r_clients.push(r_server.unwrap());
