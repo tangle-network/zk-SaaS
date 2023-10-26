@@ -6,6 +6,8 @@ use std::error::Error;
 use std::path::PathBuf;
 use std::time::Duration;
 use structopt::StructOpt;
+use tokio::net::TcpStream;
+use tokio_rustls::TlsStream;
 use tokio_util::bytes::Bytes;
 
 #[derive(Debug, StructOpt)]
@@ -101,7 +103,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn load_king(opts: Opt) -> Result<ProdNet, Box<dyn Error>> {
+async fn load_king(
+    opts: Opt,
+) -> Result<ProdNet<TlsStream<TcpStream>>, Box<dyn Error>> {
     if opts.client_cert_dir.is_none() {
         panic!("Must supply the client cert dir")
     }
@@ -138,12 +142,14 @@ async fn load_king(opts: Opt) -> Result<ProdNet, Box<dyn Error>> {
         private_key: private_key_king,
     };
 
-    ProdNet::new_king(opts.bind_addr.unwrap(), identity, client_certs)
+    ProdNet::new_king_tls(opts.bind_addr.unwrap(), identity, client_certs)
         .await
         .map_err(|err| format!("Error creating king: {err:?}").into())
 }
 
-async fn load_client(opts: Opt) -> Result<ProdNet, Box<dyn Error>> {
+async fn load_client(
+    opts: Opt,
+) -> Result<ProdNet<TlsStream<TcpStream>>, Box<dyn Error>> {
     if opts.king_addr.is_none() {
         panic!("Must supply the king address for the clients")
     }
@@ -166,9 +172,15 @@ async fn load_client(opts: Opt) -> Result<ProdNet, Box<dyn Error>> {
         private_key: private_key_client,
     };
 
-    ProdNet::new_peer(opts.id, king_addr, identity, king_store, opts.n_parties)
-        .await
-        .map_err(|err| format!("Error creating client: {err:?}").into())
+    ProdNet::new_peer_tls(
+        opts.id,
+        king_addr,
+        identity,
+        king_store,
+        opts.n_parties,
+    )
+    .await
+    .map_err(|err| format!("Error creating client: {err:?}").into())
 }
 
 /// Loads a certificate into a cert store
@@ -186,7 +198,6 @@ fn load_cert(
 
 fn get_certs(path: &PathBuf) -> Result<Vec<Certificate>, Box<dyn Error>> {
     let bytes = std::fs::read(path)?;
-    //let certs = rustls_pemfile::certs(&mut reader)?;
     Ok(vec![Certificate(bytes)])
 }
 

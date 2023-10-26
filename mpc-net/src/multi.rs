@@ -21,7 +21,7 @@ use super::MpcNet;
 
 pub type WrappedStream<T> = Framed<T, LengthDelimitedCodec>;
 
-fn wrap_stream<T: AsyncRead + AsyncWrite>(
+pub fn wrap_stream<T: AsyncRead + AsyncWrite>(
     stream: T,
 ) -> Framed<T, LengthDelimitedCodec> {
     LengthDelimitedCodec::builder()
