@@ -5,8 +5,4 @@ members = [
     "dist-primitives",
     "mpc-net",
     "groth16",
-    "zk-gadget"
 ]
-
-[workspace.dependencies]
-mpc-net = { path = "mpc-net" }
