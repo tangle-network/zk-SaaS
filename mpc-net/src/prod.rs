@@ -175,12 +175,10 @@ impl<T: IOStream> ProdNet<T> {
         n_parties: usize,
         mut ios: Vec<T>,
     ) -> Result<Self, MpcNetError> {
-        if id != 0 {
-            if ios.len() != 1 {
-                return Err(MpcNetError::BadInput {
-                    err: "Must pass a single connection to the king if you are a peer",
-                });
-            }
+        if id != 0 && ios.len() != 1 {
+            return Err(MpcNetError::BadInput {
+                err: "Must pass a single connection to the king if you are a peer",
+            });
         }
 
         let mut connections = MpcNetConnection {
