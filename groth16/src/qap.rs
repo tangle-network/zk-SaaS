@@ -25,7 +25,7 @@ pub struct QAP<F: PrimeField, D: EvaluationDomain<F>> {
 }
 
 #[derive(Debug, Clone)]
-pub struct PackedQAPShare<F: PrimeField> {
+pub struct PackedQAPShare<F: PrimeField, D: EvaluationDomain<F>> {
     pub num_inputs: usize,
     pub num_constraints: usize,
     /// A is also called P in the paper.
@@ -34,46 +34,8 @@ pub struct PackedQAPShare<F: PrimeField> {
     pub b: Vec<F>,
     /// C is also called W in the paper.
     pub c: Vec<F>,
-}
-
-impl<F: PrimeField, D: EvaluationDomain<F>> QAP<F, D> {
-    pub fn pss(&self, pp: &PackedSharingParams<F>) -> Vec<PackedQAPShare<F>> {
-        let num_inputs = self.num_inputs;
-        let num_constraints = self.num_constraints;
-
-        let packed_a = cfg_chunks!(self.a, pp.l)
-            .map(|chunk| pp.pack_from_public(chunk.to_vec()))
-            .collect::<Vec<_>>();
-
-        let packed_b = cfg_chunks!(self.b, pp.l)
-            .map(|chunk| pp.pack_from_public(chunk.to_vec()))
-            .collect::<Vec<_>>();
-
-        let packed_c = cfg_chunks!(self.c, pp.l)
-            .map(|chunk| pp.pack_from_public(chunk.to_vec()))
-            .collect::<Vec<_>>();
-
-        cfg_into_iter!(0..pp.n)
-            .map(|i| {
-                let a = cfg_into_iter!(0..packed_a.len())
-                    .map(|j| packed_a[j][i])
-                    .collect::<Vec<_>>();
-                let b = cfg_into_iter!(0..packed_b.len())
-                    .map(|j| packed_b[j][i])
-                    .collect::<Vec<_>>();
-                let c = cfg_into_iter!(0..packed_c.len())
-                    .map(|j| packed_c[j][i])
-                    .collect::<Vec<_>>();
-                PackedQAPShare {
-                    num_inputs,
-                    num_constraints,
-                    a,
-                    b,
-                    c,
-                }
-            })
-            .collect::<Vec<_>>()
-    }
+    /// Evaluation domain of the QAP.
+    pub domain: D,
 }
 
 pub fn qap<F: PrimeField, D: EvaluationDomain<F>>(
@@ -123,6 +85,51 @@ pub fn qap<F: PrimeField, D: EvaluationDomain<F>>(
         c,
         domain,
     })
+}
+
+impl<F: PrimeField, D: EvaluationDomain<F> + Send> QAP<F, D> {
+    pub fn pss(
+        &self,
+        pp: &PackedSharingParams<F>,
+    ) -> Vec<PackedQAPShare<F, D>> {
+        let num_inputs = self.num_inputs;
+        let num_constraints = self.num_constraints;
+        let domain = self.domain;
+
+        let packed_a = cfg_chunks!(self.a, pp.l)
+            .map(|chunk| pp.pack_from_public(chunk.to_vec()))
+            .collect::<Vec<_>>();
+
+        let packed_b = cfg_chunks!(self.b, pp.l)
+            .map(|chunk| pp.pack_from_public(chunk.to_vec()))
+            .collect::<Vec<_>>();
+
+        let packed_c = cfg_chunks!(self.c, pp.l)
+            .map(|chunk| pp.pack_from_public(chunk.to_vec()))
+            .collect::<Vec<_>>();
+
+        cfg_into_iter!(0..pp.n)
+            .map(|i| {
+                let a = cfg_into_iter!(0..packed_a.len())
+                    .map(|j| packed_a[j][i])
+                    .collect::<Vec<_>>();
+                let b = cfg_into_iter!(0..packed_b.len())
+                    .map(|j| packed_b[j][i])
+                    .collect::<Vec<_>>();
+                let c = cfg_into_iter!(0..packed_c.len())
+                    .map(|j| packed_c[j][i])
+                    .collect::<Vec<_>>();
+                PackedQAPShare {
+                    num_inputs,
+                    num_constraints,
+                    a,
+                    b,
+                    c,
+                    domain,
+                }
+            })
+            .collect::<Vec<_>>()
+    }
 }
 
 #[cfg(test)]
