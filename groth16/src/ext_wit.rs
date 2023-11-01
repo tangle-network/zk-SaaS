@@ -109,7 +109,7 @@ pub async fn h<
         d_fft(w_coeff, false, 1, false, &cd.constraint, pp, net, CHANNEL0)
             .await?;
 
-     cfg_iter_mut!(pq)
+    cfg_iter_mut!(pq)
         .zip(w_eval)
         .for_each(|(pq_i, w_i)| *pq_i -= &w_i);
 
