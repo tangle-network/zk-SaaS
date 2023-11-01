@@ -389,7 +389,9 @@ impl LocalTestNet {
             + 'static,
     ) -> Vec<K> {
         let mut futures = FuturesOrdered::new();
-        for (_, connections) in self.nodes.into_iter() {
+        let mut sorted_nodes = self.nodes.into_iter().collect::<Vec<_>>();
+        sorted_nodes.sort_by(|a, b| a.0.cmp(&b.0));
+        for (_, connections) in sorted_nodes {
             let next_f = f.clone();
             let next_user_data = user_data.clone();
             futures.push_back(Box::pin(async move {

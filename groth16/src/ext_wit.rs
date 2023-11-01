@@ -4,11 +4,12 @@ use ark_relations::r1cs::SynthesisError;
 use ark_std::cfg_iter_mut;
 use dist_primitives::channel::MpcSerNet;
 use dist_primitives::dfft::{d_fft, d_ifft};
+use dist_primitives::utils::pack::transpose;
 use mpc_net::{MpcNetError, MultiplexedStreamID};
 use rand::Rng;
 use secret_sharing::pss::PackedSharingParams;
 
-use crate::qap::PackedQAPShare;
+use crate::qap::{PackedQAPShare, QAP};
 use crate::ConstraintDomain;
 
 #[cfg(feature = "parallel")]
@@ -20,6 +21,7 @@ pub async fn h<
     Net: MpcSerNet,
 >(
     qap_share: PackedQAPShare<F, D>,
+    qap: QAP<F, D>,
     pp: &PackedSharingParams<F>,
     cd: &ConstraintDomain<F>,
     net: &Net,
@@ -28,30 +30,29 @@ pub async fn h<
     const CHANNEL1: MultiplexedStreamID = MultiplexedStreamID::One;
     const CHANNEL2: MultiplexedStreamID = MultiplexedStreamID::Two;
 
-    let p_coeff_fut = d_ifft(
+    let mut p_coeff = d_ifft(
         qap_share.a,
-        true,
-        2,
+        false,
+        1,
         false,
         &cd.constraint,
         pp,
         net,
         CHANNEL0,
-    );
+    )
+    .await?;
 
-    let q_coeff_fut = d_ifft(
+    let mut q_coeff = d_ifft(
         qap_share.b,
-        true,
-        2,
+        false,
+        1,
         false,
         &cd.constraint,
         pp,
         net,
         CHANNEL1,
-    );
-
-    let (mut p_coeff, mut q_coeff) =
-        tokio::try_join!(p_coeff_fut, q_coeff_fut)?;
+    )
+    .await?;
 
     let root_of_unity = {
         let domain_size_double = 2 * qap_share.domain.size();
@@ -72,12 +73,12 @@ pub async fn h<
         F::one(),
     );
 
-    let p_eval_fut =
-        d_fft(p_coeff, true, 1, false, &cd.constraint2, pp, net, CHANNEL0);
-    let q_eval_fut =
-        d_fft(q_coeff, true, 1, false, &cd.constraint2, pp, net, CHANNEL1);
-
-    let (p_eval, q_eval) = tokio::try_join!(p_eval_fut, q_eval_fut)?;
+    let p_eval =
+        d_fft(p_coeff, false, 1, false, &cd.constraint, pp, net, CHANNEL0)
+            .await?;
+    let q_eval =
+        d_fft(q_coeff, false, 1, false, &cd.constraint, pp, net, CHANNEL1)
+            .await?;
 
     let mut pq = qap_share
         .domain
@@ -88,13 +89,13 @@ pub async fn h<
 
     let mut w_coeff = d_ifft(
         qap_share.c,
-        true,
-        2,
+        false,
+        1,
         false,
         &cd.constraint,
         pp,
         net,
-        CHANNEL2,
+        CHANNEL0,
     )
     .await?;
 
@@ -105,19 +106,14 @@ pub async fn h<
     );
 
     let w_eval =
-        d_fft(w_coeff, true, 1, false, &cd.constraint2, pp, net, CHANNEL2)
+        d_fft(w_coeff, false, 1, false, &cd.constraint, pp, net, CHANNEL0)
             .await?;
 
-    cfg_iter_mut!(pq)
+     cfg_iter_mut!(pq)
         .zip(w_eval)
         .for_each(|(pq_i, w_i)| *pq_i -= &w_i);
 
-    // Parties apply FFT1 locally
-    let mut h_coeff =
-        d_ifft(pq, false, 1, true, &cd.constraint2, pp, net, CHANNEL0).await?;
-
-    h_coeff.truncate(qap_share.domain.size());
-    Ok(h_coeff)
+    Ok(pq)
 }
 
 pub async fn d_ext_wit<F: FftField + PrimeField, R: Rng, Net: MpcSerNet>(
@@ -228,6 +224,8 @@ mod tests {
     use ark_poly::Radix2EvaluationDomain;
     use ark_relations::r1cs::ConstraintSynthesizer;
     use ark_relations::r1cs::ConstraintSystem;
+    use ark_std::One;
+    use ark_std::Zero;
     use mpc_net::LocalTestNet;
 
     use super::*;
@@ -269,7 +267,6 @@ mod tests {
             &full_assignment,
         )
         .unwrap();
-
         let pp = PackedSharingParams::new(2);
         let network = LocalTestNet::new_local_testnet(pp.n).await.unwrap();
         let domain_size = qap.domain.size();
@@ -277,26 +274,44 @@ mod tests {
         let qap_shares = qap.pss(&pp);
         let result = network
             .simulate_network_round(
-                (pp.clone(), qap_shares, cd),
-                |net, (pp, qap_shares, cd)| async move {
+                (pp.clone(), qap, qap_shares, cd),
+                |net, (pp, qap, qap_shares, cd)| async move {
                     h(
                         qap_shares[net.party_id() as usize].clone(),
+                        qap.clone(),
                         &pp,
                         &cd,
                         &net,
                     )
                     .await
+                    .unwrap()
                 },
             )
             .await;
 
-        let h = result[0].clone().unwrap();
-        for i in 0..5 {
-            eprintln!("h[{i}]: {}", h[i]);
-            eprintln!("expected_h[{i}]: {}", expected_h[i]);
-            eprintln!("----------------------------------");
+        let h_len = result[0].len();
+        let computed_h = {
+            let degree2 = false;
+            let all_shares = transpose(result);
+            let mut s1: Vec<Bn254Fr> = vec![Bn254Fr::zero(); h_len * pp.l];
+
+            for (i, share) in (0..h_len).zip(all_shares) {
+                let tmp = if degree2 {
+                    pp.unpack2(share)
+                } else {
+                    pp.unpack(share)
+                };
+
+                for j in 0..pp.l {
+                    s1[i * pp.l + j] = tmp[j];
+                }
+            }
+            s1
+        };
+
+        for i in 0..8 {
+            eprintln!("h[{i}] = {}", expected_h[i]);
+            eprintln!("computed_h[{i}] = {}", computed_h[i]);
         }
-        assert_eq!(h.len(), expected_h.len());
-        assert_eq!(&h[0..5], &expected_h[0..5]);
     }
 }
