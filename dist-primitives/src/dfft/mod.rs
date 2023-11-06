@@ -33,7 +33,7 @@ pub async fn d_fft<F: FftField + PrimeField, Net: MpcSerNet>(
     );
 
     // Parties apply FFT1 locally
-    fft1_in_place(&mut pcoeff_share, dom, pp, &net);
+    fft1_in_place(&mut pcoeff_share, dom, pp, dom.group_gen, &net);
     // King applies FFT2 and parties receive shares of evals
     fft2_with_rearrange_pad(
         pcoeff_share,
@@ -42,6 +42,7 @@ pub async fn d_fft<F: FftField + PrimeField, Net: MpcSerNet>(
         degree2,
         dom,
         pp,
+        dom.group_gen,
         net,
         sid,
     )
@@ -70,7 +71,7 @@ pub async fn d_ifft<F: FftField + PrimeField, Net: MpcSerNet>(
     peval_share.iter_mut().for_each(|x| *x *= sizeinv);
 
     // Parties apply FFT1 locally
-    fft1_in_place(&mut peval_share, dom, pp, &net);
+    fft1_in_place(&mut peval_share, dom, pp, dom.group_gen_inv, &net);
     // King applies FFT2 and parties receive shares of evals
     fft2_with_rearrange_pad(
         peval_share,
@@ -79,6 +80,7 @@ pub async fn d_ifft<F: FftField + PrimeField, Net: MpcSerNet>(
         degree2,
         dom,
         pp,
+        dom.group_gen_inv,
         net,
         sid,
     )
@@ -90,6 +92,7 @@ fn fft1_in_place<F: FftField + PrimeField, Net: MpcSerNet>(
     px: &mut Vec<F>,
     dom: &Radix2EvaluationDomain<F>,
     pp: &PackedSharingParams<F>,
+    gen: F,
     net: &Net,
 ) {
     // FFT1 computation done locally on a vector of shares
@@ -107,7 +110,7 @@ fn fft1_in_place<F: FftField + PrimeField, Net: MpcSerNet>(
     // fft1
     for i in (log2(pp.l) + 1..=log2(dom.size())).rev() {
         let poly_size = dom.size() / 2usize.pow(i);
-        let factor_stride = dom.group_gen_inv.pow([2usize.pow(i - 1) as u64]);
+        let factor_stride = gen.pow([2usize.pow(i - 1) as u64]);
         let mut factor = factor_stride;
         for k in 0..poly_size {
             for j in 0..2usize.pow(i - 1) / pp.l {
@@ -129,6 +132,7 @@ fn fft2_in_place<F: FftField + PrimeField, Net: MpcSerNet>(
     s1: &mut Vec<F>,
     dom: &Radix2EvaluationDomain<F>,
     pp: &PackedSharingParams<F>,
+    gen: F,
     net: &Net,
 ) {
     // King applies fft2, packs the vectors as desired and sends shares to parties
@@ -141,7 +145,7 @@ fn fft2_in_place<F: FftField + PrimeField, Net: MpcSerNet>(
     // fft2
     for i in (1..=log2(pp.l)).rev() {
         let poly_size = dom.size() / 2usize.pow(i);
-        let factor_stride = dom.group_gen_inv.pow([2usize.pow(i - 1) as u64]);
+        let factor_stride = gen.pow([2usize.pow(i - 1) as u64]);
         let mut factor = factor_stride;
         for k in 0..poly_size {
             for j in 0..2usize.pow(i - 1) {
@@ -155,7 +159,7 @@ fn fft2_in_place<F: FftField + PrimeField, Net: MpcSerNet>(
         mem::swap(s1, &mut s2);
     }
 
-    // s1.rotate_right(1);
+    s1.rotate_right(1);
 
     if net.is_king() {
         debug!("Finished fft2");
@@ -170,6 +174,7 @@ async fn fft2_with_rearrange_pad<F: FftField + PrimeField, Net: MpcSerNet>(
     degree2: bool,
     dom: &Radix2EvaluationDomain<F>,
     pp: &PackedSharingParams<F>,
+    gen: F,
     net: &Net,
     sid: MultiplexedStreamID,
 ) -> Result<Vec<F>, MpcNetError> {
@@ -195,7 +200,7 @@ async fn fft2_with_rearrange_pad<F: FftField + PrimeField, Net: MpcSerNet>(
             }
         }
 
-        fft2_in_place(&mut s1, dom, pp, &net); // s1 constrains final output now
+        fft2_in_place(&mut s1, dom, pp, gen, &net); // s1 constrains final output now
 
         // Optionally double length by padding zeros here
         if pad > 1 {
@@ -318,19 +323,11 @@ mod tests {
         eprintln!("d_ifft done ...");
         eprintln!("Computing x evals from the shares ...");
         let computed_x_evals = {
-            let mut data = transpose(result)
+            let data = transpose(result)
                 .into_iter()
                 .flat_map(|x| pp.unpack(x))
-                .rev()
                 .collect::<Vec<_>>();
-            // rearrange the data
-            // so that if we have M elements in data
-            // Swap ith element with (M - i) ith element
-            // e.g. if M = 8, then swap 1st with 7th, 2nd with 6th, 3rd with 5th
-            // and 4th with 4th (skip 0, 4).
-            for i in 1..M / 2 {
-                data.swap(i, M - i);
-            }
+
             data
         };
 
@@ -418,7 +415,6 @@ mod tests {
         let computed_x_coeff = transpose(result)
             .into_iter()
             .flat_map(|x| pp.unpack(x))
-            .rev()
             .collect::<Vec<_>>();
 
         eprintln!("Comparing the computed x coeff with actual x coeff ...");
@@ -515,19 +511,11 @@ mod tests {
         eprintln!("d_ifftxd_fft done ...");
         eprintln!("Computing x evals from the shares ...");
         let computed_x = {
-            let mut data = transpose(result)
+            let data = transpose(result)
                 .into_iter()
                 .flat_map(|x| pp.unpack(x))
-                .rev()
                 .collect::<Vec<_>>();
-            // rearrange the data
-            // so that if we have M elements in data
-            // Swap ith element with (M - i) ith element
-            // e.g. if M = 8, then swap 1st with 7th, 2nd with 6th, 3rd with 5th
-            // and 4th with 4th (skip 0, 4).
-            for i in 1..M / 2 {
-                data.swap(i, M - i);
-            }
+
             data
         };
 
