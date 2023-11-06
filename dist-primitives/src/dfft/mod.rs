@@ -250,15 +250,12 @@ pub fn fft_in_place_rearrange<F: FftField + PrimeField>(data: &mut Vec<F>) {
 mod tests {
     use super::*;
     use ark_bls12_377::Fr as F;
-    use ark_ff::Field;
-    use ark_ff::One;
-    use ark_ff::Zero;
     use ark_std::UniformRand;
     use mpc_net::LocalTestNet;
     use mpc_net::MpcNet;
 
     const L: usize = 2;
-    const M: usize = L * 4;
+    const M: usize = L * 16;
 
     #[tokio::test]
     async fn d_ifft_works() {
@@ -267,14 +264,14 @@ mod tests {
         let degree2 = false;
         let constraint = Radix2EvaluationDomain::<F>::new(M).unwrap();
         let network = LocalTestNet::new_local_testnet(pp.n).await.unwrap();
-        let mut x = (0..M).map(|k| F::from(k as u32 + 1)).collect::<Vec<_>>();
+        let mut x = (0..M).map(|_| F::rand(rng)).collect::<Vec<_>>();
         eprint!("x = [");
-        for i in 0..M {
+        (0..M).for_each(|i| {
             eprint!("{}", x[i]);
             if i != M - 1 {
                 eprint!(", ");
             }
-        }
+        });
         eprintln!("]");
 
         eprintln!("Computed x evals done ...");
@@ -320,11 +317,22 @@ mod tests {
             .await;
         eprintln!("d_ifft done ...");
         eprintln!("Computing x evals from the shares ...");
-        let computed_x_evals = transpose(result)
-            .into_iter()
-            .flat_map(|x| pp.unpack(x))
-            .rev()
-            .collect::<Vec<_>>();
+        let computed_x_evals = {
+            let mut data = transpose(result)
+                .into_iter()
+                .flat_map(|x| pp.unpack(x))
+                .rev()
+                .collect::<Vec<_>>();
+            // rearrange the data
+            // so that if we have M elements in data
+            // Swap ith element with (M - i) ith element
+            // e.g. if M = 8, then swap 1st with 7th, 2nd with 6th, 3rd with 5th
+            // and 4th with 4th (skip 0, 4).
+            for i in 1..M / 2 {
+                data.swap(i, M - i);
+            }
+            data
+        };
 
         eprintln!("Comparing the computed x eval with actual x eval ...");
         eprintln!("```");
@@ -359,15 +367,15 @@ mod tests {
         let degree2 = false;
         let constraint = Radix2EvaluationDomain::<F>::new(M).unwrap();
         let network = LocalTestNet::new_local_testnet(pp.n).await.unwrap();
-        let mut x = (0..M).map(|k| F::from(k as u32 + 1)).collect::<Vec<_>>();
+        let mut x = (0..M).map(|_| F::rand(rng)).collect::<Vec<_>>();
         let actual_x_coeff = constraint.fft(&x);
         eprint!("x = [");
-        for i in 0..M {
+        (0..M).for_each(|i| {
             eprint!("{}", x[i]);
             if i != M - 1 {
                 eprint!(", ");
             }
-        }
+        });
         eprintln!("]");
 
         fft_in_place_rearrange(&mut x);
