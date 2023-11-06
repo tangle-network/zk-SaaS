@@ -250,6 +250,7 @@ pub fn fft_in_place_rearrange<F: FftField + PrimeField>(data: &mut Vec<F>) {
 mod tests {
     use super::*;
     use ark_bls12_377::Fr as F;
+    use ark_ff::Field;
     use ark_ff::One;
     use ark_ff::Zero;
     use ark_std::UniformRand;
@@ -257,33 +258,141 @@ mod tests {
     use mpc_net::MpcNet;
 
     const L: usize = 2;
-    const M: usize = L * 16;
+    const M: usize = L * 4;
 
     #[tokio::test]
     async fn d_ifft_works() {
         let rng = &mut ark_std::test_rng();
         let pp = PackedSharingParams::<F>::new(L);
-        let network = LocalTestNet::new_local_testnet(pp.n).await.unwrap();
-        let x = vec![F::rand(rng); M];
-        let packed_x = pack_vec(&x, &pp);
-        let x_shares = (0usize..pp.n)
-            .map(|i| {
-                (0..packed_x.len())
-                    .map(|j| packed_x[j][i])
-                    .collect::<Vec<_>>()
-            })
-            .collect::<Vec<_>>();
-
         let degree2 = false;
         let constraint = Radix2EvaluationDomain::<F>::new(M).unwrap();
+        let network = LocalTestNet::new_local_testnet(pp.n).await.unwrap();
+        let mut x = (0..M).map(|k| F::from(k as u32 + 1)).collect::<Vec<_>>();
+        eprint!("x = [");
+        for i in 0..M {
+            eprint!("{}", x[i]);
+            if i != M - 1 {
+                eprint!(", ");
+            }
+        }
+        eprintln!("]");
+
+        eprintln!("Computed x evals done ...");
+        eprintln!("Computing actual x evals by using ifft ...");
+        let actual_x_evals = constraint.ifft(&x);
+        eprintln!("Actual x coeff done ...");
+
+        fft_in_place_rearrange(&mut x);
+        let mut pevals: Vec<Vec<F>> = Vec::new();
+        for i in 0..M / pp.l {
+            pevals.push(
+                x.iter()
+                    .skip(i)
+                    .step_by(M / pp.l)
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            );
+            pp.pack_from_public_in_place(&mut pevals[i]);
+        }
+
+        eprintln!("Running d_ifft ...");
         let result = network
             .simulate_network_round(
-                (x.clone(), x_shares, pp.clone(), constraint, degree2),
-                |net, (x, x_shares, pp, constraint, degree2)| async move {
+                (pevals, pp.clone(), constraint, degree2),
+                |net, (pcoeff, pp, constraint, degree2)| async move {
                     let idx = net.party_id() as usize;
-                    let x_share = x_shares[idx].clone();
+                    let peval_share =
+                        pcoeff.iter().map(|x| x[idx]).collect::<Vec<_>>();
                     d_ifft(
-                        x_share,
+                        peval_share,
+                        false,
+                        1,
+                        degree2,
+                        &constraint,
+                        &pp,
+                        &net,
+                        MultiplexedStreamID::Zero,
+                    )
+                    .await
+                    .unwrap()
+                },
+            )
+            .await;
+        eprintln!("d_ifft done ...");
+        eprintln!("Computing x evals from the shares ...");
+        let computed_x_evals = transpose(result)
+            .into_iter()
+            .flat_map(|x| pp.unpack(x))
+            .rev()
+            .collect::<Vec<_>>();
+
+        eprintln!("Comparing the computed x eval with actual x eval ...");
+        eprintln!("```");
+        for i in 0..M {
+            eprintln!("ACTL: {}", actual_x_evals[i]);
+            eprintln!("COMP: {}", computed_x_evals[i]);
+            if actual_x_evals[i] == computed_x_evals[i] {
+                eprintln!("..{i}th element Matched ✅");
+            } else {
+                eprintln!("..{i}th element Mismatched ❌");
+                // search for the element in actual_x_coeff
+                let found = computed_x_evals
+                    .iter()
+                    .position(|&x| x == actual_x_evals[i]);
+                match found {
+                    Some(i) => eprintln!(
+                        "....However, it has been found at index: {i} ⚠️"
+                    ),
+                    None => eprintln!("....and Not found at all 🤔"),
+                }
+            }
+        }
+        eprintln!("```");
+
+        assert_eq!(actual_x_evals, computed_x_evals);
+    }
+
+    #[tokio::test]
+    async fn d_fft_works() {
+        let rng = &mut ark_std::test_rng();
+        let pp = PackedSharingParams::<F>::new(L);
+        let degree2 = false;
+        let constraint = Radix2EvaluationDomain::<F>::new(M).unwrap();
+        let network = LocalTestNet::new_local_testnet(pp.n).await.unwrap();
+        let mut x = (0..M).map(|k| F::from(k as u32 + 1)).collect::<Vec<_>>();
+        let actual_x_coeff = constraint.fft(&x);
+        eprint!("x = [");
+        for i in 0..M {
+            eprint!("{}", x[i]);
+            if i != M - 1 {
+                eprint!(", ");
+            }
+        }
+        eprintln!("]");
+
+        fft_in_place_rearrange(&mut x);
+
+        let mut pcoeff: Vec<Vec<F>> = Vec::new();
+        for i in 0..M / pp.l {
+            pcoeff.push(
+                x.iter()
+                    .skip(i)
+                    .step_by(M / pp.l)
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            );
+            pp.pack_from_public_in_place(&mut pcoeff[i]);
+        }
+        eprintln!("Running d_fft ...");
+        let result = network
+            .simulate_network_round(
+                (pcoeff, pp.clone(), constraint, degree2),
+                |net, (pcoeff, pp, constraint, degree2)| async move {
+                    let idx = net.party_id() as usize;
+                    let pcoeff_share =
+                        pcoeff.iter().map(|x| x[idx]).collect::<Vec<_>>();
+                    d_fft(
+                        pcoeff_share,
                         false,
                         1,
                         degree2,
@@ -298,30 +407,34 @@ mod tests {
             )
             .await;
 
-        let x_coeff_len = result[0].len();
-        let computed_x_coeff = {
-            let all_shares = transpose(result);
-            let mut s1: Vec<F> = vec![F::zero(); x_coeff_len * pp.l];
+        let computed_x_coeff = transpose(result)
+            .into_iter()
+            .flat_map(|x| pp.unpack(x))
+            .rev()
+            .collect::<Vec<_>>();
 
-            for (i, share) in (0..x_coeff_len).zip(all_shares) {
-                let tmp = if degree2 {
-                    pp.unpack2(share)
-                } else {
-                    pp.unpack(share)
-                };
-
-                for j in 0..pp.l {
-                    s1[i * pp.l + j] = tmp[j];
+        eprintln!("Comparing the computed x coeff with actual x coeff ...");
+        eprintln!("```");
+        for i in 0..M {
+            eprintln!("ACTL: {}", actual_x_coeff[i]);
+            eprintln!("COMP: {}", computed_x_coeff[i]);
+            if actual_x_coeff[i] == computed_x_coeff[i] {
+                eprintln!("..{i}th element Matched ✅");
+            } else {
+                eprintln!("..{i}th element Mismatched ❌");
+                // search for the element in actual_x_coeff
+                let found = computed_x_coeff
+                    .iter()
+                    .position(|&x| x == actual_x_coeff[i]);
+                match found {
+                    Some(i) => eprintln!(
+                        "....However, it has been found at index: {i} ⚠️"
+                    ),
+                    None => eprintln!("....and Not found at all 🤔"),
                 }
             }
-            s1.reverse();
-            s1
-        };
-        let actual_x_coeff = constraint.ifft(&x);
-        for i in 0..M {
-            eprintln!("x[{i}] = {}", actual_x_coeff[i]);
-            eprintln!("computed_x_coeff[{i}] = {}", computed_x_coeff[i]);
         }
+        eprintln!("```");
         assert_eq!(actual_x_coeff, computed_x_coeff);
     }
 }

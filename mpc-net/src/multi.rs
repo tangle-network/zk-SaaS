@@ -403,6 +403,18 @@ impl LocalTestNet {
         }
         futures.collect().await
     }
+
+    /// Get the connection for a given party ID
+    pub fn get_connection(
+        &self,
+        party_id: usize,
+    ) -> &MpcNetConnection<TcpStream> {
+        self.nodes.get(&party_id).unwrap()
+    }
+
+    pub fn get_king(&self) -> &MpcNetConnection<TcpStream> {
+        self.get_connection(0)
+    }
 }
 
 #[async_trait]
