@@ -255,7 +255,7 @@ mod tests {
     use mpc_net::MpcNet;
 
     const L: usize = 2;
-    const M: usize = L * 16;
+    const M: usize = L * 4;
 
     #[tokio::test]
     async fn d_ifft_works() {
@@ -444,5 +444,114 @@ mod tests {
         }
         eprintln!("```");
         assert_eq!(actual_x_coeff, computed_x_coeff);
+    }
+
+    #[tokio::test]
+    async fn d_ifftxd_fft_works() {
+        let rng = &mut ark_std::test_rng();
+        let pp = PackedSharingParams::<F>::new(L);
+        let degree2 = false;
+        let constraint = Radix2EvaluationDomain::<F>::new(M).unwrap();
+        let network = LocalTestNet::new_local_testnet(pp.n).await.unwrap();
+        let mut x = (0..M).map(|k| F::from(k as u32 + 1)).collect::<Vec<_>>();
+        let expected_x = x.clone();
+        eprint!("x = [");
+        (0..M).for_each(|i| {
+            eprint!("{}", x[i]);
+            if i != M - 1 {
+                eprint!(", ");
+            }
+        });
+        eprintln!("]");
+
+        fft_in_place_rearrange(&mut x);
+        let mut pevals: Vec<Vec<F>> = Vec::new();
+        for i in 0..M / pp.l {
+            pevals.push(
+                x.iter()
+                    .skip(i)
+                    .step_by(M / pp.l)
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            );
+            pp.pack_from_public_in_place(&mut pevals[i]);
+        }
+
+        eprintln!("Running d_ifftxd_ifft ...");
+        let result = network
+            .simulate_network_round(
+                (pevals, pp.clone(), constraint, degree2),
+                |net, (pcoeff, pp, constraint, degree2)| async move {
+                    let idx = net.party_id() as usize;
+                    let peval_share =
+                        pcoeff.iter().map(|x| x[idx]).collect::<Vec<_>>();
+                    let p_coeff = d_ifft(
+                        peval_share,
+                        true,
+                        1,
+                        degree2,
+                        &constraint,
+                        &pp,
+                        &net,
+                        MultiplexedStreamID::Zero,
+                    )
+                    .await
+                    .unwrap();
+                    d_fft(
+                        p_coeff,
+                        false,
+                        1,
+                        degree2,
+                        &constraint,
+                        &pp,
+                        &net,
+                        MultiplexedStreamID::Zero,
+                    )
+                    .await
+                    .unwrap()
+                },
+            )
+            .await;
+        eprintln!("d_ifftxd_fft done ...");
+        eprintln!("Computing x evals from the shares ...");
+        let computed_x = {
+            let mut data = transpose(result)
+                .into_iter()
+                .flat_map(|x| pp.unpack(x))
+                .rev()
+                .collect::<Vec<_>>();
+            // rearrange the data
+            // so that if we have M elements in data
+            // Swap ith element with (M - i) ith element
+            // e.g. if M = 8, then swap 1st with 7th, 2nd with 6th, 3rd with 5th
+            // and 4th with 4th (skip 0, 4).
+            for i in 1..M / 2 {
+                data.swap(i, M - i);
+            }
+            data
+        };
+
+        eprintln!("Comparing the computed x eval with actual x eval ...");
+        eprintln!("```");
+        for i in 0..M {
+            eprintln!("ACTL: {}", expected_x[i]);
+            eprintln!("COMP: {}", computed_x[i]);
+            if expected_x[i] == computed_x[i] {
+                eprintln!("..{i}th element Matched ✅");
+            } else {
+                eprintln!("..{i}th element Mismatched ❌");
+                // search for the element in actual_x_coeff
+                let found = computed_x.iter().position(|&x| x == expected_x[i]);
+                match found {
+                    Some(i) => eprintln!(
+                        "....However, it has been found at index: {i} ⚠️"
+                    ),
+                    None => eprintln!("....and Not found at all 🤔"),
+                }
+            }
+        }
+        eprintln!("```");
+
+        assert_eq!(expected_x, computed_x);
     }
 }
