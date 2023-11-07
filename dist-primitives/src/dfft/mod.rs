@@ -322,14 +322,10 @@ mod tests {
             .await;
         eprintln!("d_ifft done ...");
         eprintln!("Computing x evals from the shares ...");
-        let computed_x_evals = {
-            let data = transpose(result)
-                .into_iter()
-                .flat_map(|x| pp.unpack(x))
-                .collect::<Vec<_>>();
-
-            data
-        };
+        let computed_x_evals = transpose(result)
+            .into_iter()
+            .flat_map(|x| pp.unpack(x))
+            .collect::<Vec<_>>();
 
         eprintln!("Comparing the computed x eval with actual x eval ...");
         eprintln!("```");
@@ -449,7 +445,7 @@ mod tests {
         let degree2 = false;
         let constraint = Radix2EvaluationDomain::<F>::new(M).unwrap();
         let network = LocalTestNet::new_local_testnet(pp.n).await.unwrap();
-        let mut x = (0..M).map(|k| F::from(k as u32 + 1)).collect::<Vec<_>>();
+        let mut x = (0..M).map(|_| F::rand(rng)).collect::<Vec<_>>();
         let expected_x = x.clone();
         eprint!("x = [");
         (0..M).for_each(|i| {
@@ -510,14 +506,10 @@ mod tests {
             .await;
         eprintln!("d_ifftxd_fft done ...");
         eprintln!("Computing x evals from the shares ...");
-        let computed_x = {
-            let data = transpose(result)
-                .into_iter()
-                .flat_map(|x| pp.unpack(x))
-                .collect::<Vec<_>>();
-
-            data
-        };
+        let computed_x = transpose(result)
+            .into_iter()
+            .flat_map(|x| pp.unpack(x))
+            .collect::<Vec<_>>();
 
         eprintln!("Comparing the computed x eval with actual x eval ...");
         eprintln!("```");
