@@ -101,7 +101,7 @@ impl<F: PrimeField, D: EvaluationDomain<F> + Send> QAP<F, D> {
             fft_in_place_rearrange(&mut x);
             let mut pevals: Vec<Vec<F>> = Vec::new();
             let m = x.len();
-            cfg_into_iter!(0..m / pp.l).for_each(|i| {
+            for i in 0..m / pp.l {
                 pevals.push(
                     cfg_iter!(x)
                         .skip(i)
@@ -110,7 +110,7 @@ impl<F: PrimeField, D: EvaluationDomain<F> + Send> QAP<F, D> {
                         .collect::<Vec<_>>(),
                 );
                 pp.pack_from_public_in_place(&mut pevals[i]);
-            });
+            }
             pevals
         };
 

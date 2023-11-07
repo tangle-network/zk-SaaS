@@ -6,13 +6,14 @@ use ark_crypto_primitives::snark::SNARK;
 use ark_ec::pairing::Pairing;
 use ark_ec::CurveGroup;
 use ark_ff::BigInt;
-use ark_groth16::r1cs_to_qap::R1CSToQAP;
 use ark_groth16::{Groth16, Proof};
 use ark_poly::Radix2EvaluationDomain;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem};
 use ark_std::{cfg_chunks, cfg_into_iter, end_timer, start_timer, Zero};
 
 use dist_primitives::dmsm;
+use groth16::ext_wit;
+use groth16::qap::qap;
 use log::debug;
 use mpc_net::{LocalTestNet as Net, MpcNet, MultiplexedStreamID};
 
@@ -30,7 +31,7 @@ async fn dsha256<E: Pairing, Net: MpcNet>(
     a_share: &[E::ScalarField],
     ax_share: &[E::ScalarField],
     h_share: &[E::ScalarField],
-    net: &mut Net,
+    net: &Net,
 ) -> (E::G1, E::G2, E::G1) {
     debug!(
         "s:{}, v:{}, h:{}, w:{}, u:{}, a_share:{}, h_share:{}",
@@ -137,11 +138,9 @@ async fn main() {
 
     let num_inputs = matrices.num_instance_variables;
     let num_constraints = matrices.num_constraints;
-    let h = CircomReduction::witness_map_from_matrices::<
-        Bn254Fr,
-        Radix2EvaluationDomain<_>,
-    >(&matrices, num_inputs, num_constraints, &full_assignment)
-    .unwrap();
+    let qap =
+        qap::<Bn254Fr, Radix2EvaluationDomain<_>>(&matrices, &full_assignment)
+            .unwrap();
 
     let r = Bn254Fr::zero();
     let s = Bn254Fr::zero();
@@ -156,6 +155,7 @@ async fn main() {
     ).unwrap();
 
     let pp = PackedSharingParams::new(2);
+    let qap_shares = qap.pss(&pp);
     let pp_g1 = PackedSharingParams::new(pp.l);
     let pp_g2 = PackedSharingParams::new(pp.l);
     let crs_shares =
@@ -163,23 +163,25 @@ async fn main() {
             &pk, pp_g1, pp_g2,
         );
     let crs_shares = Arc::new(crs_shares);
+    let qap_shares = Arc::new(qap_shares);
     let aux_assignment = &full_assignment[num_inputs..];
     let ax_shares = pack_from_witness::<Bn254>(&pp, aux_assignment.to_vec());
     let a_shares =
         pack_from_witness::<Bn254>(&pp, full_assignment[1..].to_vec());
-    let h_shares = pack_from_witness::<Bn254>(&pp, h);
     let network = Net::new_local_testnet(pp.n).await.unwrap();
 
     let result = network
         .simulate_network_round(
-            (crs_shares, pp, a_shares, ax_shares, h_shares),
-            |mut net, (crs_shares, pp, a_shares, ax_shares, h_shares)| async move {
+            (crs_shares, pp, a_shares, ax_shares, qap_shares),
+            |net, (crs_shares, pp, a_shares, ax_shares, qap_shares)| async move {
+                let idx = net.party_id() as usize;
                 let crs_share =
-                    crs_shares.get(net.party_id() as usize).unwrap();
-                let a_share = &a_shares[net.party_id() as usize];
-                let ax_share = &ax_shares[net.party_id() as usize];
-                let h_share = &h_shares[net.party_id() as usize];
-                dsha256(&pp, crs_share, a_share, ax_share, h_share, &mut net).await
+                    crs_shares.get(idx).unwrap();
+                let a_share = &a_shares[idx];
+                let ax_share = &ax_shares[idx];
+                let qap_share = qap_shares[idx].clone();
+                let h_share = ext_wit::h(qap_share, &pp, &net).await.unwrap();
+                dsha256(&pp, crs_share, a_share, ax_share, &h_share, &net).await
             },
         )
         .await;

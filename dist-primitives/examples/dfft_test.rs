@@ -54,22 +54,22 @@ pub async fn d_fft_test<F: FftField + PrimeField, Net: MpcNet>(
     .unwrap();
 
     // Send to king who reconstructs and checks the answer
-    net.send_to_king(&peval_share, MultiplexedStreamID::One)
+    let result = net
+        .send_to_king(&peval_share, MultiplexedStreamID::One)
         .await
-        .unwrap()
-        .map(|peval_shares| {
-            let peval_shares = transpose(peval_shares);
+        .unwrap();
+    if let Some(peval_shares) = result {
+        let peval_shares = transpose(peval_shares);
 
-            let pevals: Vec<F> = peval_shares
-                .into_iter()
-                .flat_map(|x| pp.unpack(x))
-                .rev()
-                .collect();
+        let pevals: Vec<F> = peval_shares
+            .into_iter()
+            .flat_map(|x| pp.unpack(x))
+            .collect();
 
-            if net.is_king() {
-                assert_eq!(should_be_output, pevals);
-            }
-        });
+        if net.is_king() {
+            assert_eq!(should_be_output, pevals);
+        }
+    }
 }
 
 #[tokio::main]

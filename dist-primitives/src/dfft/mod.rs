@@ -3,7 +3,7 @@ use crate::{
     utils::pack::{pack_vec, transpose},
 };
 use ark_ff::{FftField, PrimeField};
-use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
+use ark_poly::EvaluationDomain;
 use ark_std::log2;
 use log::debug;
 use mpc_net::{MpcNetError, MultiplexedStreamID};
@@ -14,12 +14,16 @@ use std::mem;
 /// rearrange: whether or not to rearrange output shares
 /// pad: whether or not to pad output shares with zeros
 /// degree2: whether or not to do degree reduction n the input shares
-pub async fn d_fft<F: FftField + PrimeField, Net: MpcSerNet>(
+pub async fn d_fft<
+    F: FftField + PrimeField,
+    D: EvaluationDomain<F>,
+    Net: MpcSerNet,
+>(
     mut pcoeff_share: Vec<F>,
     rearrange: bool,
     pad: usize,
     degree2: bool,
-    dom: &Radix2EvaluationDomain<F>,
+    dom: &D,
     pp: &PackedSharingParams<F>,
     net: &Net,
     sid: MultiplexedStreamID,
@@ -33,7 +37,7 @@ pub async fn d_fft<F: FftField + PrimeField, Net: MpcSerNet>(
     );
 
     // Parties apply FFT1 locally
-    fft1_in_place(&mut pcoeff_share, dom, pp, dom.group_gen, &net);
+    fft1_in_place(&mut pcoeff_share, dom, pp, dom.group_gen(), &net);
     // King applies FFT2 and parties receive shares of evals
     fft2_with_rearrange_pad(
         pcoeff_share,
@@ -42,19 +46,23 @@ pub async fn d_fft<F: FftField + PrimeField, Net: MpcSerNet>(
         degree2,
         dom,
         pp,
-        dom.group_gen,
+        dom.group_gen(),
         net,
         sid,
     )
     .await
 }
 
-pub async fn d_ifft<F: FftField + PrimeField, Net: MpcSerNet>(
+pub async fn d_ifft<
+    F: FftField + PrimeField,
+    D: EvaluationDomain<F>,
+    Net: MpcSerNet,
+>(
     mut peval_share: Vec<F>,
     rearrange: bool,
     pad: usize,
     degree2: bool,
-    dom: &Radix2EvaluationDomain<F>,
+    dom: &D,
     pp: &PackedSharingParams<F>,
     net: &Net,
     sid: MultiplexedStreamID,
@@ -70,7 +78,7 @@ pub async fn d_ifft<F: FftField + PrimeField, Net: MpcSerNet>(
     peval_share.iter_mut().for_each(|x| *x *= dom.size_inv());
 
     // Parties apply FFT1 locally
-    fft1_in_place(&mut peval_share, dom, pp, dom.group_gen_inv, &net);
+    fft1_in_place(&mut peval_share, dom, pp, dom.group_gen_inv(), &net);
     // King applies FFT2 and parties receive shares of evals
     fft2_with_rearrange_pad(
         peval_share,
@@ -79,7 +87,7 @@ pub async fn d_ifft<F: FftField + PrimeField, Net: MpcSerNet>(
         degree2,
         dom,
         pp,
-        dom.group_gen_inv,
+        dom.group_gen_inv(),
         net,
         sid,
     )
@@ -87,16 +95,20 @@ pub async fn d_ifft<F: FftField + PrimeField, Net: MpcSerNet>(
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-fn fft1_in_place<F: FftField + PrimeField, Net: MpcSerNet>(
+fn fft1_in_place<
+    F: FftField + PrimeField,
+    D: EvaluationDomain<F>,
+    Net: MpcSerNet,
+>(
     px: &mut Vec<F>,
-    dom: &Radix2EvaluationDomain<F>,
+    dom: &D,
     pp: &PackedSharingParams<F>,
     gen: F,
     net: &Net,
 ) {
     // FFT1 computation done locally on a vector of shares
     debug_assert_eq!(
-        dom.group_gen_inv.pow([(px.len() * pp.l) as u64]),
+        dom.group_gen_inv().pow([(px.len() * pp.l) as u64]),
         F::one(),
         "Mismatch of size in FFT1, input:{}",
         px.len()
@@ -127,9 +139,13 @@ fn fft1_in_place<F: FftField + PrimeField, Net: MpcSerNet>(
     }
 }
 
-fn fft2_in_place<F: FftField + PrimeField, Net: MpcSerNet>(
+fn fft2_in_place<
+    F: FftField + PrimeField,
+    D: EvaluationDomain<F>,
+    Net: MpcSerNet,
+>(
     s1: &mut Vec<F>,
-    dom: &Radix2EvaluationDomain<F>,
+    dom: &D,
     pp: &PackedSharingParams<F>,
     gen: F,
     net: &Net,
@@ -166,12 +182,16 @@ fn fft2_in_place<F: FftField + PrimeField, Net: MpcSerNet>(
 }
 
 /// Send shares after fft1 to king who finishes the protocol and returns packed shares
-async fn fft2_with_rearrange_pad<F: FftField + PrimeField, Net: MpcSerNet>(
+async fn fft2_with_rearrange_pad<
+    F: FftField + PrimeField,
+    D: EvaluationDomain<F>,
+    Net: MpcSerNet,
+>(
     px: Vec<F>,
     rearrange: bool,
     pad: usize,
     degree2: bool,
-    dom: &Radix2EvaluationDomain<F>,
+    dom: &D,
     pp: &PackedSharingParams<F>,
     gen: F,
     net: &Net,
@@ -254,6 +274,7 @@ pub fn fft_in_place_rearrange<F: FftField + PrimeField>(data: &mut Vec<F>) {
 mod tests {
     use super::*;
     use ark_bls12_377::Fr as F;
+    use ark_poly::Radix2EvaluationDomain;
     use ark_std::UniformRand;
     use mpc_net::LocalTestNet;
     use mpc_net::MpcNet;
