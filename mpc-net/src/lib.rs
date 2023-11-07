@@ -4,6 +4,7 @@ pub mod prod;
 use async_trait::async_trait;
 use auto_impl::auto_impl;
 pub use multi::LocalTestNet;
+use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use tokio_util::bytes::Bytes;
 
@@ -21,7 +22,7 @@ impl<T: ToString> From<T> for MpcNetError {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Copy)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash, Copy)]
 pub enum MultiplexedStreamID {
     Zero = 0,
     One = 1,
