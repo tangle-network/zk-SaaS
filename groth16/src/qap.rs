@@ -2,7 +2,8 @@ use ark_ff::PrimeField;
 use ark_groth16::r1cs_to_qap::evaluate_constraint;
 use ark_poly::EvaluationDomain;
 use ark_relations::r1cs::{ConstraintMatrices, SynthesisError};
-use ark_std::{cfg_chunks, cfg_into_iter, cfg_iter, cfg_iter_mut, vec};
+use ark_std::{cfg_into_iter, cfg_iter, cfg_iter_mut, vec};
+use dist_primitives::dfft::fft_in_place_rearrange;
 use secret_sharing::pss::PackedSharingParams;
 
 #[cfg(feature = "parallel")]
@@ -96,29 +97,32 @@ impl<F: PrimeField, D: EvaluationDomain<F> + Send> QAP<F, D> {
         let num_constraints = self.num_constraints;
         let domain = self.domain;
 
-        let packed_a = cfg_chunks!(self.a, pp.l)
-            .map(|chunk| pp.pack_from_public(chunk.to_vec()))
-            .collect::<Vec<_>>();
+        let pack = |mut x: Vec<F>| {
+            fft_in_place_rearrange(&mut x);
+            let mut pevals: Vec<Vec<F>> = Vec::new();
+            let m = x.len();
+            cfg_into_iter!(0..m / pp.l).for_each(|i| {
+                pevals.push(
+                    cfg_iter!(x)
+                        .skip(i)
+                        .step_by(m / pp.l)
+                        .cloned()
+                        .collect::<Vec<_>>(),
+                );
+                pp.pack_from_public_in_place(&mut pevals[i]);
+            });
+            pevals
+        };
 
-        let packed_b = cfg_chunks!(self.b, pp.l)
-            .map(|chunk| pp.pack_from_public(chunk.to_vec()))
-            .collect::<Vec<_>>();
-
-        let packed_c = cfg_chunks!(self.c, pp.l)
-            .map(|chunk| pp.pack_from_public(chunk.to_vec()))
-            .collect::<Vec<_>>();
+        let packed_a = pack(self.a.clone());
+        let packed_b = pack(self.b.clone());
+        let packed_c = pack(self.c.clone());
 
         cfg_into_iter!(0..pp.n)
             .map(|i| {
-                let a = cfg_into_iter!(0..packed_a.len())
-                    .map(|j| packed_a[j][i])
-                    .collect::<Vec<_>>();
-                let b = cfg_into_iter!(0..packed_b.len())
-                    .map(|j| packed_b[j][i])
-                    .collect::<Vec<_>>();
-                let c = cfg_into_iter!(0..packed_c.len())
-                    .map(|j| packed_c[j][i])
-                    .collect::<Vec<_>>();
+                let a = cfg_iter!(packed_a).map(|x| x[i]).collect();
+                let b = cfg_iter!(packed_b).map(|x| x[i]).collect();
+                let c = cfg_iter!(packed_c).map(|x| x[i]).collect();
                 PackedQAPShare {
                     num_inputs,
                     num_constraints,

@@ -67,8 +67,7 @@ pub async fn d_ifft<F: FftField + PrimeField, Net: MpcSerNet>(
         dom.size()
     );
 
-    let sizeinv = F::from(dom.size).inverse().unwrap();
-    peval_share.iter_mut().for_each(|x| *x *= sizeinv);
+    peval_share.iter_mut().for_each(|x| *x *= dom.size_inv());
 
     // Parties apply FFT1 locally
     fft1_in_place(&mut peval_share, dom, pp, dom.group_gen_inv, &net);

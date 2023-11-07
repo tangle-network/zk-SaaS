@@ -1,15 +1,14 @@
 use ark_ff::{FftField, PrimeField};
 use ark_poly::EvaluationDomain;
-use ark_relations::r1cs::SynthesisError;
-use ark_std::cfg_iter_mut;
+use ark_std::cfg_into_iter;
 use dist_primitives::channel::MpcSerNet;
 use dist_primitives::dfft::{d_fft, d_ifft};
-use dist_primitives::utils::pack::transpose;
+use dist_primitives::utils::pack::{pack_vec, transpose};
 use mpc_net::{MpcNetError, MultiplexedStreamID};
 use rand::Rng;
 use secret_sharing::pss::PackedSharingParams;
 
-use crate::qap::{PackedQAPShare, QAP};
+use crate::qap::PackedQAPShare;
 use crate::ConstraintDomain;
 
 #[cfg(feature = "parallel")]
@@ -21,19 +20,16 @@ pub async fn h<
     Net: MpcSerNet,
 >(
     qap_share: PackedQAPShare<F, D>,
-    qap: QAP<F, D>,
     pp: &PackedSharingParams<F>,
     cd: &ConstraintDomain<F>,
     net: &Net,
 ) -> Result<Vec<F>, MpcNetError> {
     const CHANNEL0: MultiplexedStreamID = MultiplexedStreamID::Zero;
-    const CHANNEL1: MultiplexedStreamID = MultiplexedStreamID::One;
-    const CHANNEL2: MultiplexedStreamID = MultiplexedStreamID::Two;
 
-    let mut p_coeff = d_ifft(
+    let p_coeff = d_ifft(
         qap_share.a,
-        false,
-        1,
+        true,
+        2,
         false,
         &cd.constraint,
         pp,
@@ -41,56 +37,14 @@ pub async fn h<
         CHANNEL0,
     )
     .await?;
-
-    let mut q_coeff = d_ifft(
-        qap_share.b,
-        false,
-        1,
-        false,
-        &cd.constraint,
-        pp,
-        net,
-        CHANNEL1,
-    )
-    .await?;
-
-    let root_of_unity = {
-        let domain_size_double = 2 * qap_share.domain.size();
-        let domain_double = D::new(domain_size_double)
-            .ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
-        domain_double.element(1)
-    };
-
-    D::distribute_powers_and_mul_by_const(
-        &mut p_coeff,
-        root_of_unity,
-        F::one(),
-    );
-
-    D::distribute_powers_and_mul_by_const(
-        &mut q_coeff,
-        root_of_unity,
-        F::one(),
-    );
 
     let p_eval =
-        d_fft(p_coeff, false, 1, false, &cd.constraint, pp, net, CHANNEL0)
+        d_fft(p_coeff, false, 1, false, &cd.constraint2, pp, net, CHANNEL0)
             .await?;
-    let q_eval =
-        d_fft(q_coeff, false, 1, false, &cd.constraint, pp, net, CHANNEL1)
-            .await?;
-
-    let mut pq = qap_share
-        .domain
-        .mul_polynomials_in_evaluation_domain(&p_eval, &q_eval);
-
-    drop(p_eval);
-    drop(q_eval);
-
-    let mut w_coeff = d_ifft(
-        qap_share.c,
-        false,
-        1,
+    let q_coeff = d_ifft(
+        qap_share.b,
+        true,
+        2,
         false,
         &cd.constraint,
         pp,
@@ -99,21 +53,63 @@ pub async fn h<
     )
     .await?;
 
-    D::distribute_powers_and_mul_by_const(
-        &mut w_coeff,
-        root_of_unity,
-        F::one(),
-    );
-
-    let w_eval =
-        d_fft(w_coeff, false, 1, false, &cd.constraint, pp, net, CHANNEL0)
+    let q_eval =
+        d_fft(q_coeff, false, 1, false, &cd.constraint2, pp, net, CHANNEL0)
             .await?;
 
-    cfg_iter_mut!(pq)
-        .zip(w_eval)
-        .for_each(|(pq_i, w_i)| *pq_i -= &w_i);
+    let w_coeff = d_ifft(
+        qap_share.c,
+        true,
+        2,
+        false,
+        &cd.constraint,
+        pp,
+        net,
+        CHANNEL0,
+    )
+    .await?;
 
-    Ok(pq)
+    let w_eval =
+        d_fft(w_coeff, false, 1, false, &cd.constraint2, pp, net, CHANNEL0)
+            .await?;
+
+    // Send the shares to the king to do the final computation
+    let received_p_shares = net.send_to_king(&p_eval, CHANNEL0).await?;
+    let received_q_shares = net.send_to_king(&q_eval, CHANNEL0).await?;
+    let received_w_shares = net.send_to_king(&w_eval, CHANNEL0).await?;
+    let h_share = if let (Some(p_shares), Some(q_shares), Some(w_shares)) =
+        (received_p_shares, received_q_shares, received_w_shares)
+    {
+        let unpack_shares = |v| {
+            let mut s1 = cfg_into_iter!(transpose(v))
+                .flat_map(|x| pp.unpack(x))
+                .collect::<Vec<_>>();
+            // swap each ith element with l*i+t element
+            cfg_into_iter!(0..cd.m).for_each(|i| s1.swap(i, i * pp.l + pp.t));
+            s1
+        };
+        let mut p_eval = unpack_shares(p_shares);
+        let mut q_eval = unpack_shares(q_shares);
+        let mut w_eval = unpack_shares(w_shares);
+
+        p_eval.truncate(cd.m);
+        q_eval.truncate(cd.m);
+        w_eval.truncate(cd.m);
+
+        // King do the final step of multiplication.
+        let h = cfg_into_iter!(p_eval)
+            .zip(q_eval)
+            .zip(w_eval)
+            .map(|((p, q), w)| p.mul(q).sub(w))
+            .collect::<Vec<_>>();
+        // pack and send to parties
+        let h_shares = transpose(pack_vec(&h, pp));
+        net.recv_from_king(Some(h_shares), CHANNEL0).await?
+    } else {
+        net.recv_from_king(None, CHANNEL0).await?
+    };
+
+    Ok(h_share)
 }
 
 pub async fn d_ext_wit<F: FftField + PrimeField, R: Rng, Net: MpcSerNet>(
@@ -224,8 +220,7 @@ mod tests {
     use ark_poly::Radix2EvaluationDomain;
     use ark_relations::r1cs::ConstraintSynthesizer;
     use ark_relations::r1cs::ConstraintSystem;
-    use ark_std::One;
-    use ark_std::Zero;
+    use ark_std::cfg_iter;
     use mpc_net::LocalTestNet;
 
     use super::*;
@@ -274,11 +269,10 @@ mod tests {
         let qap_shares = qap.pss(&pp);
         let result = network
             .simulate_network_round(
-                (pp.clone(), qap, qap_shares, cd),
-                |net, (pp, qap, qap_shares, cd)| async move {
+                (pp.clone(), qap_shares, cd),
+                |net, (pp, qap_shares, cd)| async move {
                     h(
                         qap_shares[net.party_id() as usize].clone(),
-                        qap.clone(),
                         &pp,
                         &cd,
                         &net,
@@ -289,29 +283,31 @@ mod tests {
             )
             .await;
 
-        let h_len = result[0].len();
-        let computed_h = {
-            let degree2 = false;
-            let all_shares = transpose(result);
-            let mut s1: Vec<Bn254Fr> = vec![Bn254Fr::zero(); h_len * pp.l];
+        let computed_h = transpose(result)
+            .into_iter()
+            .flat_map(|x| pp.unpack(x))
+            .collect::<Vec<_>>();
 
-            for (i, share) in (0..h_len).zip(all_shares) {
-                let tmp = if degree2 {
-                    pp.unpack2(share)
-                } else {
-                    pp.unpack(share)
-                };
-
-                for j in 0..pp.l {
-                    s1[i * pp.l + j] = tmp[j];
+        eprintln!("```");
+        for i in 0..expected_h.len() {
+            eprintln!("ACTL: {}", expected_h[i]);
+            eprintln!("COMP: {}", computed_h[i]);
+            if expected_h[i] == computed_h[i] {
+                eprintln!("..{i}th element Matched ✅");
+            } else {
+                eprintln!("..{i}th element Mismatched ❌");
+                // search for the element in actual_x_coeff
+                let found =
+                    cfg_iter!(computed_h).position(|&x| x == expected_h[i]);
+                match found {
+                    Some(i) => eprintln!(
+                        "....However, it has been found at index: {i} ⚠️"
+                    ),
+                    None => eprintln!("....and Not found at all 🤔"),
                 }
             }
-            s1
-        };
-
-        for i in 0..8 {
-            eprintln!("h[{i}] = {}", expected_h[i]);
-            eprintln!("computed_h[{i}] = {}", computed_h[i]);
+            assert_eq!(computed_h[i], expected_h[i]);
         }
+        eprintln!("```");
     }
 }
