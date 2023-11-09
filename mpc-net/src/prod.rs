@@ -123,7 +123,7 @@ pub struct ProdNet<T: IOStream> {
     connections: MpcNetConnection<T>,
 }
 
-#[derive(Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Debug)]
 pub enum ProtocolPacket {
     Syn,
     SynAck,
@@ -310,24 +310,42 @@ impl<T: IOStream> MpcNet for ProdNet<T> {
         self.connections.is_init()
     }
 
-    async fn client_send_or_king_receive(
+    async fn recv_from(
         &self,
-        bytes: &[u8],
-        sid: MultiplexedStreamID,
-    ) -> Result<Option<Vec<Bytes>>, MpcNetError> {
-        self.connections
-            .client_send_or_king_receive(bytes, sid)
-            .await
-    }
-
-    async fn client_receive_or_king_send(
-        &self,
-        bytes: Option<Vec<Bytes>>,
+        id: u32,
         sid: MultiplexedStreamID,
     ) -> Result<Bytes, MpcNetError> {
-        self.connections
-            .client_receive_or_king_send(bytes, sid)
+        let peer = self.connections.peers.get(&id).ok_or_else(|| {
+            MpcNetError::Generic(format!("Peer {} not found", id))
+        })?;
+
+        recv_packet(peer.streams.as_ref(), sid)
             .await
+            .map(|r| match r {
+                ProtocolPacket::Packet(packet) => Ok(Bytes::from(packet)),
+
+                _ => Err(MpcNetError::Generic(format!(
+                    "Unexpected packet, got {r:?}"
+                ))),
+            })?
+    }
+
+    async fn send_to(
+        &self,
+        id: u32,
+        bytes: Bytes,
+        sid: MultiplexedStreamID,
+    ) -> Result<(), MpcNetError> {
+        let peer = self.connections.peers.get(&id).ok_or_else(|| {
+            MpcNetError::Generic(format!("Peer {} not found", id))
+        })?;
+
+        send_packet(
+            peer.streams.as_ref(),
+            sid,
+            ProtocolPacket::Packet(bytes.to_vec()),
+        )
+        .await
     }
 }
 

@@ -196,9 +196,13 @@ impl MpcNetConnection<TcpStream> {
 
         // Do a round with the king, to be sure everyone is ready
         let from_all = self
-            .send_to_king(&[self.id as u8], genesis_round_channel)
+            .client_send_or_king_receive(
+                &[self.id as u8] as &[u8],
+                genesis_round_channel,
+            )
             .await?;
-        self.recv_from_king(from_all, genesis_round_channel).await?;
+        self.client_receive_or_king_send(from_all, genesis_round_channel)
+            .await?;
 
         for peer in &self.peers {
             if peer.0 == &self.id {
@@ -215,101 +219,6 @@ impl MpcNetConnection<TcpStream> {
 
         trace!("Done with recv_from_king");
         Ok(())
-    }
-}
-
-impl<IO: AsyncRead + AsyncWrite + Unpin + Send> MpcNetConnection<IO> {
-    fn is_king(&self) -> bool {
-        self.id == 0
-    }
-
-    // If we are the king, we receive all the packets
-    // If we are not the king, we send our packet to the king
-    async fn send_to_king(
-        &self,
-        bytes_out: &[u8],
-        sid: MultiplexedStreamID,
-    ) -> Result<Option<Vec<Bytes>>, MpcNetError> {
-        let bytes_out = Bytes::copy_from_slice(bytes_out);
-        let own_id = self.id;
-
-        let r = if self.is_king() {
-            let mut r = FuturesOrdered::new();
-
-            for (id, peer) in self.peers.iter() {
-                let bytes_out: Bytes = bytes_out.clone();
-                r.push_back(Box::pin(async move {
-                    let bytes_in = if *id == own_id {
-                        bytes_out
-                    } else {
-                        recv_stream(peer.streams.as_ref(), sid).await?
-                    };
-
-                    Ok::<_, MpcNetError>((*id, bytes_in))
-                }));
-            }
-
-            let mut ret: HashMap<u32, Bytes> = r.try_collect().await?;
-            ret.entry(0).or_insert_with(|| bytes_out.clone());
-
-            let mut sorted_ret = Vec::new();
-            for x in 0..self.n_parties {
-                sorted_ret.push(ret.remove(&(x as u32)).unwrap());
-            }
-
-            Ok(Some(sorted_ret))
-        } else {
-            let stream = self.peers.get(&0).unwrap().streams.as_ref();
-            send_stream(stream, bytes_out, sid).await?;
-            Ok(None)
-        };
-        r
-    }
-
-    async fn recv_from_king(
-        &self,
-        bytes_out: Option<Vec<Bytes>>,
-        sid: MultiplexedStreamID,
-    ) -> Result<Bytes, MpcNetError> {
-        let own_id = self.id;
-
-        if let Some(bytes_out) = bytes_out {
-            if !self.is_king() {
-                return Err(MpcNetError::BadInput {
-                    err: "recv_from_king called with bytes_out when not king",
-                });
-            }
-
-            let m = bytes_out[0].len();
-
-            for (id, peer) in self.peers.iter().filter(|p| *p.0 != own_id) {
-                if bytes_out[*id as usize].len() != m {
-                    return Err(MpcNetError::Protocol {
-                        err: format!("Peer {} sent wrong number of bytes", id),
-                        party: *id,
-                    });
-                }
-
-                send_stream(
-                    peer.streams.as_ref(),
-                    bytes_out[*id as usize].clone(),
-                    sid,
-                )
-                .await?;
-            }
-
-            Ok(bytes_out[own_id as usize].clone())
-        } else {
-            if self.is_king() {
-                return Err(MpcNetError::BadInput {
-                    err: "recv_from_king called with no bytes_out when king",
-                });
-            }
-
-            let stream = self.peers.get(&0).unwrap().streams.as_ref();
-            let ret = recv_stream(stream, sid).await?;
-            Ok(ret)
-        }
     }
 }
 
@@ -433,20 +342,27 @@ impl<IO: AsyncRead + AsyncWrite + Unpin + Send> MpcNet
         self.peers.iter().all(|r| r.1.streams.is_some())
     }
 
-    async fn client_send_or_king_receive(
+    async fn recv_from(
         &self,
-        bytes: &[u8],
-        sid: MultiplexedStreamID,
-    ) -> Result<Option<Vec<Bytes>>, MpcNetError> {
-        self.send_to_king(bytes, sid).await
-    }
-
-    async fn client_receive_or_king_send(
-        &self,
-        bytes: Option<Vec<Bytes>>,
+        id: u32,
         sid: MultiplexedStreamID,
     ) -> Result<Bytes, MpcNetError> {
-        self.recv_from_king(bytes, sid).await
+        let peer = self.peers.get(&id).ok_or_else(|| {
+            MpcNetError::Generic(format!("Peer {} not found", id))
+        })?;
+        recv_stream(peer.streams.as_ref(), sid).await
+    }
+
+    async fn send_to(
+        &self,
+        id: u32,
+        bytes: Bytes,
+        sid: MultiplexedStreamID,
+    ) -> Result<(), MpcNetError> {
+        let peer = self.peers.get(&id).ok_or_else(|| {
+            MpcNetError::Generic(format!("Peer {} not found", id))
+        })?;
+        send_stream(peer.streams.as_ref(), bytes, sid).await
     }
 }
 
