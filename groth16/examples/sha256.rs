@@ -11,9 +11,8 @@ use ark_poly::Radix2EvaluationDomain;
 use ark_relations::r1cs::{ConstraintSynthesizer, ConstraintSystem};
 use ark_std::{cfg_chunks, cfg_into_iter, end_timer, start_timer, Zero};
 
-use dist_primitives::dmsm;
-use groth16::ext_wit;
 use groth16::qap::qap;
+use groth16::{ext_wit, qap};
 use log::debug;
 use mpc_net::{LocalTestNet as Net, MpcNet, MultiplexedStreamID};
 
@@ -25,58 +24,69 @@ use groth16::proving_key::PackedProvingKeyShare;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
-async fn dsha256<E: Pairing, Net: MpcNet>(
+async fn dsha256<E, Net>(
     pp: &PackedSharingParams<E::ScalarField>,
     crs_share: &PackedProvingKeyShare<E>,
+    qap_share: qap::PackedQAPShare<
+        E::ScalarField,
+        Radix2EvaluationDomain<E::ScalarField>,
+    >,
     a_share: &[E::ScalarField],
     ax_share: &[E::ScalarField],
-    h_share: &[E::ScalarField],
     net: &Net,
-) -> (E::G1, E::G2, E::G1) {
-    debug!(
-        "s:{}, v:{}, h:{}, w:{}, u:{}, a_share:{}, h_share:{}",
-        crs_share.s.len(),
-        crs_share.v.len(),
-        crs_share.h.len(),
-        crs_share.w.len(),
-        crs_share.u.len(),
-        a_share.len(),
-        h_share.len()
-    );
-
+) -> (E::G1, E::G2, E::G1)
+where
+    E: Pairing,
+    Net: MpcNet,
+{
+    let h_share = ext_wit::h(qap_share, pp, &net).await.unwrap();
     let msm_section = start_timer!(|| "MSM operations");
     // Compute msm while dropping the base vectors as they are not used again
     let compute_a = start_timer!(|| "Compute A");
-    let pi_a_share: E::G1 =
-        dmsm::d_msm(&crs_share.s, a_share, pp, net, MultiplexedStreamID::One)
-            .await
-            .unwrap();
+    let pi_a_share = groth16::prove::A::<E> {
+        L: Default::default(),
+        N: Default::default(),
+        r: E::ScalarField::zero(),
+        pp,
+        S: &crs_share.s,
+        a: a_share,
+    }
+    .compute(net, MultiplexedStreamID::Zero)
+    .await
+    .unwrap();
     end_timer!(compute_a);
 
     let compute_b = start_timer!(|| "Compute B");
-    let pi_b_share: E::G2 =
-        dmsm::d_msm(&crs_share.v, a_share, pp, net, MultiplexedStreamID::One)
-            .await
-            .unwrap();
+    let pi_b_share: E::G2 = groth16::prove::B::<E> {
+        Z: Default::default(),
+        K: Default::default(),
+        s: E::ScalarField::zero(),
+        pp,
+        V: &crs_share.v,
+        a: a_share,
+    }
+    .compute(net, MultiplexedStreamID::Zero)
+    .await
+    .unwrap();
     end_timer!(compute_b);
 
     let compute_c = start_timer!(|| "Compute C");
-    // NOTE: Commented out since `r` is zero, hence there is no need
-    // to compute b_g1_query. instead we are using zero.
-    // let pi_c_share1: E::G1 =
-    //     dmsm::d_msm(&crs_share.h, a_share, pp, net, MultiplexedStreamID::One)
-    //         .await
-    //         .unwrap();
-    let pi_c_share1 = E::G1::zero();
-    let pi_c_share2: E::G1 =
-        dmsm::d_msm(&crs_share.w, ax_share, pp, net, MultiplexedStreamID::One)
-            .await
-            .unwrap();
-    let pi_c_share3: E::G1 =
-        dmsm::d_msm(&crs_share.u, h_share, pp, net, MultiplexedStreamID::Zero)
-            .await
-            .unwrap();
-    let pi_c_share: E::G1 = pi_c_share1 + pi_c_share2 + pi_c_share3;
+    let pi_c_share = groth16::prove::C::<E> {
+        W: &crs_share.w,
+        U: &crs_share.u,
+        A: pi_a_share,
+        M: Default::default(),
+        r: E::ScalarField::zero(),
+        s: E::ScalarField::zero(),
+        pp,
+        H: &crs_share.h,
+        a: a_share,
+        ax: ax_share,
+        h: &h_share,
+    }
+    .compute(net)
+    .await
+    .unwrap();
     end_timer!(compute_c);
 
     end_timer!(msm_section);
@@ -180,8 +190,7 @@ async fn main() {
                 let a_share = &a_shares[idx];
                 let ax_share = &ax_shares[idx];
                 let qap_share = qap_shares[idx].clone();
-                let h_share = ext_wit::h(qap_share, &pp, &net).await.unwrap();
-                dsha256(&pp, crs_share, a_share, ax_share, &h_share, &net).await
+                dsha256(&pp, crs_share, qap_share, a_share, ax_share, &net).await
             },
         )
         .await;
