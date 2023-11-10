@@ -26,7 +26,7 @@ pub struct PackedProvingKeyShare<E: Pairing> {
 
 impl<E: Pairing> PackedProvingKeyShare<E>
 where
-    E::ScalarField: FftField,
+    E::ScalarField: FftField + PrimeField,
     <<E as Pairing>::G1Affine as AffineRepr>::ScalarField: FftField,
     E::BaseField: PrimeField,
 {
