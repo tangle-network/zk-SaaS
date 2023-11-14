@@ -109,6 +109,92 @@ where
             .collect()
     }
 
+    /// Given a proving key, pack it into a ProvingKeyShare.
+    /// For only the given party index.
+    pub fn pack_from_arkworks_proving_key_and_party_index(
+        party_index: usize,
+        pk: &ark_groth16::ProvingKey<E>,
+        pp_g1: PackedSharingParams<
+            <<E as Pairing>::G1Affine as AffineRepr>::ScalarField,
+        >,
+        pp_g2: PackedSharingParams<
+            <<E as Pairing>::G2Affine as AffineRepr>::ScalarField,
+        >,
+    ) -> Self {
+        assert!(pp_g1.l == pp_g2.l);
+        assert!(pp_g1.n == pp_g2.n);
+        let n = pp_g1.n;
+
+        let num_of_chunks_per_party = |x| x / n;
+        let start = |x| party_index * num_of_chunks_per_party(x);
+        let pre_packed_s = cfg_into_iter!(pk.a_query.clone())
+            .skip(1 + start(pk.a_query.len()))
+            .take(num_of_chunks_per_party(pk.a_query.len()))
+            .map(Into::into)
+            .collect::<Vec<_>>();
+        let pre_packed_u = cfg_into_iter!(pk.h_query.clone())
+            .skip(start(pk.h_query.len()))
+            .take(num_of_chunks_per_party(pk.h_query.len()))
+            .map(Into::into)
+            .collect::<Vec<_>>();
+        let pre_packed_w = cfg_into_iter!(pk.l_query.clone())
+            .skip(start(pk.l_query.len()))
+            .take(num_of_chunks_per_party(pk.l_query.len()))
+            .map(Into::into)
+            .collect::<Vec<_>>();
+        let pre_packed_h = cfg_into_iter!(pk.b_g1_query.clone())
+            .skip(1 + start(pk.b_g1_query.len()))
+            .take(num_of_chunks_per_party(pk.b_g1_query.len()))
+            .map(Into::into)
+            .collect::<Vec<_>>();
+        let pre_packed_v = cfg_into_iter!(pk.b_g2_query.clone())
+            .skip(1 + start(pk.b_g2_query.len()))
+            .take(num_of_chunks_per_party(pk.b_g2_query.len()))
+            .map(Into::into)
+            .collect::<Vec<_>>();
+
+        let packed_s = cfg_chunks!(pre_packed_s, pp_g1.l)
+            .map(|chunk| packexp_from_public::<E::G1>(chunk, &pp_g1))
+            .collect::<Vec<_>>();
+        let packed_u = cfg_chunks!(pre_packed_u, pp_g1.l)
+            .map(|chunk| packexp_from_public::<E::G1>(chunk, &pp_g1))
+            .collect::<Vec<_>>();
+        let packed_w = cfg_chunks!(pre_packed_w, pp_g1.l)
+            .map(|chunk| packexp_from_public::<E::G1>(chunk, &pp_g1))
+            .collect::<Vec<_>>();
+        let packed_h = cfg_chunks!(pre_packed_h, pp_g1.l)
+            .map(|chunk| packexp_from_public::<E::G1>(chunk, &pp_g1))
+            .collect::<Vec<_>>();
+        let packed_v = cfg_chunks!(pre_packed_v, pp_g2.l)
+            .map(|chunk| packexp_from_public::<E::G2>(chunk, &pp_g2))
+            .collect::<Vec<_>>();
+
+        let i = party_index;
+        let s_shares = cfg_into_iter!(0..packed_s.len())
+            .map(|j| packed_s[j][i].into())
+            .collect::<Vec<_>>();
+        let u_shares = cfg_into_iter!(0..packed_u.len())
+            .map(|j| packed_u[j][i].into())
+            .collect::<Vec<_>>();
+        let v_shares = cfg_into_iter!(0..packed_v.len())
+            .map(|j| packed_v[j][i].into())
+            .collect::<Vec<_>>();
+        let w_shares = cfg_into_iter!(0..packed_w.len())
+            .map(|j| packed_w[j][i].into())
+            .collect::<Vec<_>>();
+        let h_shares = cfg_into_iter!(0..packed_h.len())
+            .map(|j| packed_h[j][i].into())
+            .collect::<Vec<_>>();
+
+        PackedProvingKeyShare::<E> {
+            s: s_shares,
+            u: u_shares,
+            v: v_shares,
+            w: w_shares,
+            h: h_shares,
+        }
+    }
+
     pub fn rand<R: Rng>(
         rng: &mut R,
         domain_size: usize,
@@ -164,6 +250,8 @@ mod tests {
     use ark_crypto_primitives::snark::SNARK;
     use ark_groth16::Groth16;
 
+    const L: usize = 2;
+
     #[test]
     fn packed_pk_from_arkworks_pk() {
         let _ = env_logger::builder()
@@ -184,13 +272,57 @@ mod tests {
                 circom, rng,
             )
             .unwrap();
-        let pp_g1 = PackedSharingParams::new(4);
-        let pp_g2 = PackedSharingParams::new(4);
+        let pp_g1 = PackedSharingParams::new(L);
+        let pp_g2 = PackedSharingParams::new(L);
+        let n = pp_g1.n;
         let shares =
             PackedProvingKeyShare::<Bn254>::pack_from_arkworks_proving_key(
                 &pk, pp_g1, pp_g2,
             );
-        eprintln!("shares: {:?}", shares);
-        // Do something with the shares
+        let party_index = rng.gen_range(0..n);
+        let my_share = shares[party_index].clone();
+        // compute the share of the party_index-th party
+        let party_share = PackedProvingKeyShare::<Bn254>::pack_from_arkworks_proving_key_and_party_index(
+            party_index, &pk, pp_g1, pp_g2,
+        );
+
+        assert_eq!(my_share, party_share);
+    }
+
+    #[test]
+    fn chunking() {
+        // imagine we have a vector of length 32
+        let v = vec![0u32; 32];
+        // and we have 4 parties
+        // we want to split the vector into 4 chunks
+        // each party will hold one chunk
+        // the first party will hold the first 8 elements
+        // the second party will hold the second 8 elements
+        // and so on
+        let n = 4;
+        let chunk_size = v.len() / n;
+        let chunks = v.chunks(chunk_size).collect::<Vec<_>>();
+        assert_eq!(chunks.len(), n);
+        for i in 0..n {
+            assert_eq!(chunks[i].len(), chunk_size);
+        }
+        let my_index = 2;
+        let my_chunk1 = chunks[my_index];
+
+        // Now, Imagine we have a vector v of length 32
+        // and we have 4 parties
+        // we want to get the chunk of the party with index 2
+        // without splitting the vector into chunks first.
+        // We want to do this with iterators
+        let n = 4;
+        let chunk_size = v.len() / n;
+        let my_chunk2 = v
+            .iter()
+            .skip(my_index * chunk_size)
+            .take(chunk_size)
+            .copied()
+            .collect::<Vec<_>>();
+        assert_eq!(my_chunk2.len(), chunk_size);
+        assert_eq!(my_chunk2, my_chunk1);
     }
 }
