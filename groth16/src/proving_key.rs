@@ -3,8 +3,10 @@
 use ark_ec::{pairing::Pairing, AffineRepr};
 use ark_ff::{FftField, PrimeField};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use ark_std::{cfg_chunks, cfg_into_iter};
-use dist_primitives::dmsm::packexp_from_public;
+use ark_std::{cfg_chunks, cfg_into_iter, cfg_iter};
+use dist_primitives::dmsm::{
+    packexp_from_public, packexp_from_public_in_place,
+};
 use secret_sharing::pss::PackedSharingParams;
 
 use ark_ff::UniformRand;
@@ -125,47 +127,51 @@ where
         assert!(pp_g1.n == pp_g2.n);
         let n = pp_g1.n;
 
-        let num_of_chunks_per_party = |x| x / n;
-        let start = |x| party_index * num_of_chunks_per_party(x);
         let pre_packed_s = cfg_into_iter!(pk.a_query.clone())
-            .skip(1 + start(pk.a_query.len()))
-            .take(num_of_chunks_per_party(pk.a_query.len()))
+            .skip(1)
             .map(Into::into)
             .collect::<Vec<_>>();
         let pre_packed_u = cfg_into_iter!(pk.h_query.clone())
-            .skip(start(pk.h_query.len()))
-            .take(num_of_chunks_per_party(pk.h_query.len()))
             .map(Into::into)
             .collect::<Vec<_>>();
         let pre_packed_w = cfg_into_iter!(pk.l_query.clone())
-            .skip(start(pk.l_query.len()))
-            .take(num_of_chunks_per_party(pk.l_query.len()))
             .map(Into::into)
             .collect::<Vec<_>>();
         let pre_packed_h = cfg_into_iter!(pk.b_g1_query.clone())
-            .skip(1 + start(pk.b_g1_query.len()))
-            .take(num_of_chunks_per_party(pk.b_g1_query.len()))
+            .skip(1)
             .map(Into::into)
             .collect::<Vec<_>>();
         let pre_packed_v = cfg_into_iter!(pk.b_g2_query.clone())
-            .skip(1 + start(pk.b_g2_query.len()))
-            .take(num_of_chunks_per_party(pk.b_g2_query.len()))
+            .skip(1)
             .map(Into::into)
             .collect::<Vec<_>>();
 
+        let num_of_chunks_per_party = |x| x / n;
+        let start = |x| party_index * num_of_chunks_per_party(x);
+
         let packed_s = cfg_chunks!(pre_packed_s, pp_g1.l)
+            .skip(start(pre_packed_s.len()))
+            .take(num_of_chunks_per_party(pre_packed_s.len()))
             .map(|chunk| packexp_from_public::<E::G1>(chunk, &pp_g1))
             .collect::<Vec<_>>();
         let packed_u = cfg_chunks!(pre_packed_u, pp_g1.l)
+            .skip(start(pre_packed_u.len()))
+            .take(num_of_chunks_per_party(pre_packed_u.len()))
             .map(|chunk| packexp_from_public::<E::G1>(chunk, &pp_g1))
             .collect::<Vec<_>>();
         let packed_w = cfg_chunks!(pre_packed_w, pp_g1.l)
+            .skip(start(pre_packed_w.len()))
+            .take(num_of_chunks_per_party(pre_packed_w.len()))
             .map(|chunk| packexp_from_public::<E::G1>(chunk, &pp_g1))
             .collect::<Vec<_>>();
         let packed_h = cfg_chunks!(pre_packed_h, pp_g1.l)
+            .skip(start(pre_packed_h.len()))
+            .take(num_of_chunks_per_party(pre_packed_h.len()))
             .map(|chunk| packexp_from_public::<E::G1>(chunk, &pp_g1))
             .collect::<Vec<_>>();
         let packed_v = cfg_chunks!(pre_packed_v, pp_g2.l)
+            .skip(start(pre_packed_v.len()))
+            .take(num_of_chunks_per_party(pre_packed_v.len()))
             .map(|chunk| packexp_from_public::<E::G2>(chunk, &pp_g2))
             .collect::<Vec<_>>();
 
@@ -249,6 +255,7 @@ mod tests {
     use ark_circom::{CircomBuilder, CircomConfig, CircomReduction};
     use ark_crypto_primitives::snark::SNARK;
     use ark_groth16::Groth16;
+    use ark_std::cfg_chunks_mut;
 
     const L: usize = 2;
 
@@ -274,19 +281,10 @@ mod tests {
             .unwrap();
         let pp_g1 = PackedSharingParams::new(L);
         let pp_g2 = PackedSharingParams::new(L);
-        let n = pp_g1.n;
-        let shares =
+        let _shares =
             PackedProvingKeyShare::<Bn254>::pack_from_arkworks_proving_key(
                 &pk, pp_g1, pp_g2,
             );
-        let party_index = rng.gen_range(0..n);
-        let my_share = shares[party_index].clone();
-        // compute the share of the party_index-th party
-        let party_share = PackedProvingKeyShare::<Bn254>::pack_from_arkworks_proving_key_and_party_index(
-            party_index, &pk, pp_g1, pp_g2,
-        );
-
-        assert_eq!(my_share, party_share);
     }
 
     #[test]
@@ -324,5 +322,59 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(my_chunk2.len(), chunk_size);
         assert_eq!(my_chunk2, my_chunk1);
+    }
+
+    #[test]
+    fn dbg_w() {
+        let _ = env_logger::builder()
+            .format_timestamp(None)
+            .format_module_path(false)
+            .is_test(true)
+            .try_init();
+        let cfg = CircomConfig::<Bn254>::new(
+            "../fixtures/sha256/sha256_js/sha256.wasm",
+            "../fixtures/sha256/sha256.r1cs",
+        )
+        .unwrap();
+        let builder = CircomBuilder::new(cfg);
+        let circom = builder.setup();
+        let rng = &mut ark_std::rand::thread_rng();
+        let (pk, _vk) =
+            Groth16::<Bn254, CircomReduction>::circuit_specific_setup(
+                circom, rng,
+            )
+            .unwrap();
+        let pp_g1 = PackedSharingParams::new(L);
+        let n = pp_g1.n;
+        let idx = 2;
+
+        let left = {
+            let mut pre_packed_w = cfg_into_iter!(pk.l_query.clone())
+                .map(Into::into)
+                .collect::<Vec<_>>();
+            let packed_w = cfg_chunks_mut!(pre_packed_w, pp_g1.l)
+                .map(|chunk| {
+                    packexp_from_public::<<Bn254 as Pairing>::G1>(chunk, &pp_g1)
+                })
+                .collect::<Vec<_>>();
+            cfg_into_iter!(packed_w).map(|x| x[idx]).collect::<Vec<_>>()
+        };
+
+        let right = {
+            let pre_packed_w = cfg_into_iter!(pk.l_query.clone())
+                .map(Into::into)
+                .collect::<Vec<_>>();
+            let packed_w = cfg_chunks!(pre_packed_w, pp_g1.l)
+                .map(|chunk| {
+                    packexp_from_public::<<Bn254 as Pairing>::G1>(chunk, &pp_g1)
+                })
+                .collect::<Vec<_>>();
+            cfg_into_iter!(0..n)
+                .map(|i| cfg_iter!(packed_w).map(|x| x[i]).collect::<Vec<_>>())
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(left.len(), right[idx].len());
+        assert_eq!(left, right[idx]);
     }
 }

@@ -47,17 +47,24 @@ pub fn unpackexp<G: Group, Net: MpcSerNet>(
     }
 }
 
+
+pub fn packexp_from_public_in_place<G: Group>(
+    secrets: &mut Vec<G>,
+    pp: &PackedSharingParams<G::ScalarField>,
+) {
+    // interpolate secrets
+    pp.secret.ifft_in_place(secrets);
+
+    // evaluate polynomial to get shares
+    pp.share.fft_in_place(secrets);
+}
+
 pub fn packexp_from_public<G: Group>(
     secrets: &[G],
     pp: &PackedSharingParams<G::ScalarField>,
 ) -> Vec<G> {
     let mut result = secrets.to_vec();
-    // interpolate secrets
-    pp.secret.ifft_in_place(&mut result);
-
-    // evaluate polynomial to get shares
-    pp.share.fft_in_place(&mut result);
-
+    packexp_from_public_in_place(&mut result, pp);
     result
 }
 
@@ -73,7 +80,7 @@ pub async fn d_msm<G: CurveGroup, Net: MpcSerNet>(
 
     // First round of local computation done by parties
     log::debug!("bases: {}, scalars: {}", bases.len(), scalars.len());
-    let c_share = G::msm(bases, scalars).unwrap();
+    let c_share = G::msm(bases, scalars)?;
     // Now we do degree reduction -- psstoss
     // Send to king who reduces and sends shamir shares (not packed).
     // Should be randomized. First convert to projective share.
