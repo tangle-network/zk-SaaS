@@ -163,6 +163,9 @@ mod tests {
     use ark_circom::{CircomBuilder, CircomConfig, CircomReduction};
     use ark_crypto_primitives::snark::SNARK;
     use ark_groth16::Groth16;
+    use ark_std::cfg_chunks_mut;
+
+    const L: usize = 2;
 
     #[test]
     fn packed_pk_from_arkworks_pk() {
@@ -184,13 +187,11 @@ mod tests {
                 circom, rng,
             )
             .unwrap();
-        let pp_g1 = PackedSharingParams::new(4);
-        let pp_g2 = PackedSharingParams::new(4);
-        let shares =
+        let pp_g1 = PackedSharingParams::new(L);
+        let pp_g2 = PackedSharingParams::new(L);
+        let _shares =
             PackedProvingKeyShare::<Bn254>::pack_from_arkworks_proving_key(
                 &pk, pp_g1, pp_g2,
             );
-        eprintln!("shares: {:?}", shares);
-        // Do something with the shares
     }
 }

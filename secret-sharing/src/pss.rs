@@ -9,7 +9,7 @@ use ark_ff::FftField;
 ///
 /// ## Note
 /// Currently the packed secret sharing is deterministic, but it can easily be extended to add random values when packing
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct PackedSharingParams<F>
 where
     F: FftField,

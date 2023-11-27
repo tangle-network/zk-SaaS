@@ -320,7 +320,7 @@ mod tests {
         eprintln!("Running d_ifft ...");
         let result = network
             .simulate_network_round(
-                (pevals, pp.clone(), constraint, degree2),
+                (pevals, pp, constraint, degree2),
                 |net, (pcoeff, pp, constraint, degree2)| async move {
                     let idx = net.party_id() as usize;
                     let peval_share =
@@ -407,7 +407,7 @@ mod tests {
         eprintln!("Running d_fft ...");
         let result = network
             .simulate_network_round(
-                (pcoeff, pp.clone(), constraint, degree2),
+                (pcoeff, pp, constraint, degree2),
                 |net, (pcoeff, pp, constraint, degree2)| async move {
                     let idx = net.party_id() as usize;
                     let pcoeff_share =
@@ -492,7 +492,7 @@ mod tests {
         eprintln!("Running d_ifftxd_ifft ...");
         let result = network
             .simulate_network_round(
-                (pevals, pp.clone(), constraint, degree2),
+                (pevals, pp, constraint, degree2),
                 |net, (pcoeff, pp, constraint, degree2)| async move {
                     let idx = net.party_id() as usize;
                     let peval_share =
