@@ -47,7 +47,6 @@ pub fn unpackexp<G: Group, Net: MpcSerNet>(
     }
 }
 
-
 pub fn packexp_from_public_in_place<G: Group>(
     secrets: &mut Vec<G>,
     pp: &PackedSharingParams<G::ScalarField>,
