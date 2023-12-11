@@ -31,16 +31,17 @@ pub async fn h<
     let domain2 =
         D::new(2 * m).ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
 
-    let p_coeff_fut =
-        d_ifft(qap_share.a, true, 2, false, &domain, pp, net, CHANNEL0);
-    let q_coeff_fut =
-        d_ifft(qap_share.b, true, 2, false, &domain, pp, net, CHANNEL1);
-    let w_coeff_fut =
-        d_ifft(qap_share.c, true, 2, false, &domain, pp, net, CHANNEL2);
+    let a_coeff_fut =
+        d_ifft(qap_share.a, true, &domain, pp, net, CHANNEL0);
+    let b_coeff_fut =
+        d_ifft(qap_share.b, true, &domain, pp, net, CHANNEL1);
+    let c_coeff_fut =
+        d_ifft(qap_share.c, true, &domain, pp, net, CHANNEL2);
 
-    let (p_coeff, q_coeff, w_coeff) =
-        tokio::try_join!(p_coeff_fut, q_coeff_fut, w_coeff_fut)?;
+    let (a_coeff, b_coeff, c_coeff) =
+        tokio::try_join!(a_coeff_fut, b_coeff_fut, c_coeff_fut)?;
 
+    /*
     let p_eval_fut =
         d_fft(p_coeff, false, 1, false, &domain2, pp, net, CHANNEL0);
     let q_eval_fut =
@@ -80,6 +81,10 @@ pub async fn h<
         let mut q_eval = unpack_shares(q_shares);
         let mut w_eval = unpack_shares(w_shares);
 
+        println!("p_eval:{}", p_eval.len());
+        println!("q_eval:{}", q_eval.len());
+        println!("w_eval:{}", w_eval.len());
+
         p_eval.truncate(m);
         q_eval.truncate(m);
         w_eval.truncate(m);
@@ -98,6 +103,8 @@ pub async fn h<
     };
 
     Ok(h_share)
+    */
+    unimplemented!()
 }
 
 #[cfg(test)]

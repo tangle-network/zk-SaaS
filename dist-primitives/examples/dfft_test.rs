@@ -43,8 +43,6 @@ pub async fn d_fft_test<F: FftField + PrimeField, Net: MpcNet>(
     let peval_share = d_fft(
         pcoeff_share,
         false,
-        1,
-        false,
         dom,
         pp,
         net,

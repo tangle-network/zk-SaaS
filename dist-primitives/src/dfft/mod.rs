@@ -3,7 +3,7 @@ use crate::{
     utils::pack::{pack_vec, transpose},
 };
 use ark_ff::{FftField, PrimeField};
-use ark_poly::EvaluationDomain;
+use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_std::log2;
 use log::debug;
 use mpc_net::{MpcNetError, MultiplexedStreamID};
@@ -12,8 +12,6 @@ use std::mem;
 
 /// Takes as input packed shares of evaluations a polynomial over dom and outputs shares of the FFT of the polynomial
 /// rearrange: whether or not to rearrange output shares
-/// pad: whether or not to pad output shares with zeros
-/// degree2: whether or not to do degree reduction n the input shares
 pub async fn d_fft<
     F: FftField + PrimeField,
     D: EvaluationDomain<F>,
@@ -21,8 +19,6 @@ pub async fn d_fft<
 >(
     mut pcoeff_share: Vec<F>,
     rearrange: bool,
-    pad: usize,
-    degree2: bool,
     dom: &D,
     pp: &PackedSharingParams<F>,
     net: &Net,
@@ -37,14 +33,12 @@ pub async fn d_fft<
     );
 
     // Parties apply FFT1 locally
-    fft1_in_place(&mut pcoeff_share, dom, pp, dom.group_gen(), &net);
+    fft1_in_place(&mut pcoeff_share, pp, dom.group_gen(), &net);
     // King applies FFT2 and parties receive shares of evals
-    fft2_with_rearrange_pad(
+    fft2_with_rearrange(
         pcoeff_share,
         rearrange,
-        pad,
-        degree2,
-        dom,
+        F::one(),
         pp,
         dom.group_gen(),
         net,
@@ -53,6 +47,8 @@ pub async fn d_fft<
     .await
 }
 
+/// additionally distribute powers of domain.offset over the resulting coefficients
+/// providing as input the coset domain will help with carrying out coset-FFT
 pub async fn d_ifft<
     F: FftField + PrimeField,
     D: EvaluationDomain<F>,
@@ -60,9 +56,8 @@ pub async fn d_ifft<
 >(
     mut peval_share: Vec<F>,
     rearrange: bool,
-    pad: usize,
-    degree2: bool,
     dom: &D,
+    offset: F,
     pp: &PackedSharingParams<F>,
     net: &Net,
     sid: MultiplexedStreamID,
@@ -78,14 +73,12 @@ pub async fn d_ifft<
     peval_share.iter_mut().for_each(|x| *x *= dom.size_inv());
 
     // Parties apply FFT1 locally
-    fft1_in_place(&mut peval_share, dom, pp, dom.group_gen_inv(), &net);
+    fft1_in_place(&mut peval_share, pp, dom.group_gen_inv(), &net);
     // King applies FFT2 and parties receive shares of evals
-    fft2_with_rearrange_pad(
+    fft2_with_rearrange(
         peval_share,
         rearrange,
-        pad,
-        degree2,
-        dom,
+        offset,
         pp,
         dom.group_gen_inv(),
         net,
@@ -97,30 +90,30 @@ pub async fn d_ifft<
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 fn fft1_in_place<
     F: FftField + PrimeField,
-    D: EvaluationDomain<F>,
     Net: MpcSerNet,
 >(
     px: &mut Vec<F>,
-    dom: &D,
     pp: &PackedSharingParams<F>,
     gen: F,
     net: &Net,
 ) {
     // FFT1 computation done locally on a vector of shares
-    debug_assert_eq!(
-        dom.group_gen_inv().pow([(px.len() * pp.l) as u64]),
-        F::one(),
-        "Mismatch of size in FFT1, input:{}",
-        px.len()
-    );
+    // debug_assert_eq!(
+    //     dom.group_gen_inv().pow([(px.len() * pp.l) as u64]),
+    //     F::one(),
+    //     "Mismatch of size in FFT1, input:{}",
+    //     px.len()
+    // );
+
+    let dom_size = px.len() * pp.l;
 
     if net.is_king() {
         debug!("Applying fft1");
     }
 
     // fft1
-    for i in (log2(pp.l) + 1..=log2(dom.size())).rev() {
-        let poly_size = dom.size() / 2usize.pow(i);
+    for i in (log2(pp.l) + 1..=log2(dom_size)).rev() {
+        let poly_size = dom_size / 2usize.pow(i);
         let factor_stride = gen.pow([2usize.pow(i - 1) as u64]);
         let mut factor = factor_stride;
         for k in 0..poly_size {
@@ -141,15 +134,14 @@ fn fft1_in_place<
 
 fn fft2_in_place<
     F: FftField + PrimeField,
-    D: EvaluationDomain<F>,
     Net: MpcSerNet,
 >(
     s1: &mut Vec<F>,
-    dom: &D,
     pp: &PackedSharingParams<F>,
     gen: F,
     net: &Net,
 ) {
+    let dom_size = s1.len();
     // King applies fft2, packs the vectors as desired and sends shares to parties
     let mut s2 = vec![F::zero(); s1.len()]; //Remove this time permitting
 
@@ -159,7 +151,7 @@ fn fft2_in_place<
 
     // fft2
     for i in (1..=log2(pp.l)).rev() {
-        let poly_size = dom.size() / 2usize.pow(i);
+        let poly_size = dom_size / 2usize.pow(i);
         let factor_stride = gen.pow([2usize.pow(i - 1) as u64]);
         let mut factor = factor_stride;
         for k in 0..poly_size {
@@ -182,16 +174,13 @@ fn fft2_in_place<
 }
 
 /// Send shares after fft1 to king who finishes the protocol and returns packed shares
-async fn fft2_with_rearrange_pad<
+async fn fft2_with_rearrange<
     F: FftField + PrimeField,
-    D: EvaluationDomain<F>,
     Net: MpcSerNet,
 >(
     px: Vec<F>,
     rearrange: bool,
-    pad: usize,
-    degree2: bool,
-    dom: &D,
+    offset: F,
     pp: &PackedSharingParams<F>,
     gen: F,
     net: &Net,
@@ -208,25 +197,22 @@ async fn fft2_with_rearrange_pad<
         let mut s1: Vec<F> = vec![F::zero(); px.len() * pp.l];
 
         for (i, share) in (0..mbyl).zip(all_shares) {
-            let tmp = if degree2 {
-                pp.unpack2(share)
-            } else {
-                pp.unpack(share)
-            };
+            //todo: avoid always running unpack2 but this makes the code messy with another flag
+            let tmp = pp.unpack2(share);
 
             for j in 0..pp.l {
                 s1[i * pp.l + j] = tmp[j];
             }
         }
 
-        fft2_in_place(&mut s1, dom, pp, gen, &net); // s1 constrains final output now
+        fft2_in_place(&mut s1, pp, gen, &net); // s1 constrains final output now
 
-        // Optionally double length by padding zeros here
-        if pad > 1 {
-            s1.resize(pad * s1.len(), F::zero());
+        if !(offset == F::one()) {
+            Radix2EvaluationDomain::<F>::distribute_powers(&mut s1, offset);
         }
 
         // Optionally rearrange to get ready for next FFT/IFFT
+        // Saves one round of communication by doing it at the King in the previous FFT/IFFT
         if rearrange {
             fft_in_place_rearrange(&mut s1);
             let mut out_shares: Vec<Vec<F>> = Vec::new();
@@ -275,7 +261,7 @@ mod tests {
     use super::*;
     use ark_bls12_377::Fr as F;
     use ark_poly::Radix2EvaluationDomain;
-    use ark_std::UniformRand;
+    use ark_std::{UniformRand, One};
     use mpc_net::LocalTestNet;
     use mpc_net::MpcNet;
 
@@ -286,7 +272,6 @@ mod tests {
     async fn d_ifft_works() {
         let rng = &mut ark_std::test_rng();
         let pp = PackedSharingParams::<F>::new(L);
-        let degree2 = false;
         let constraint = Radix2EvaluationDomain::<F>::new(M).unwrap();
         let network = LocalTestNet::new_local_testnet(pp.n).await.unwrap();
         let mut x = (0..M).map(|_| F::rand(rng)).collect::<Vec<_>>();
@@ -320,17 +305,16 @@ mod tests {
         eprintln!("Running d_ifft ...");
         let result = network
             .simulate_network_round(
-                (pevals, pp, constraint, degree2),
-                |net, (pcoeff, pp, constraint, degree2)| async move {
+                (pevals, pp, constraint),
+                |net, (pcoeff, pp, constraint)| async move {
                     let idx = net.party_id() as usize;
                     let peval_share =
                         pcoeff.iter().map(|x| x[idx]).collect::<Vec<_>>();
                     d_ifft(
                         peval_share,
                         false,
-                        1,
-                        degree2,
                         &constraint,
+                        F::one(),
                         &pp,
                         &net,
                         MultiplexedStreamID::Zero,
@@ -377,7 +361,6 @@ mod tests {
     async fn d_fft_works() {
         let rng = &mut ark_std::test_rng();
         let pp = PackedSharingParams::<F>::new(L);
-        let degree2 = false;
         let constraint = Radix2EvaluationDomain::<F>::new(M).unwrap();
         let network = LocalTestNet::new_local_testnet(pp.n).await.unwrap();
         let mut x = (0..M).map(|_| F::rand(rng)).collect::<Vec<_>>();
@@ -407,16 +390,14 @@ mod tests {
         eprintln!("Running d_fft ...");
         let result = network
             .simulate_network_round(
-                (pcoeff, pp, constraint, degree2),
-                |net, (pcoeff, pp, constraint, degree2)| async move {
+                (pcoeff, pp, constraint),
+                |net, (pcoeff, pp, constraint)| async move {
                     let idx = net.party_id() as usize;
                     let pcoeff_share =
                         pcoeff.iter().map(|x| x[idx]).collect::<Vec<_>>();
                     d_fft(
                         pcoeff_share,
                         false,
-                        1,
-                        degree2,
                         &constraint,
                         &pp,
                         &net,
@@ -462,7 +443,6 @@ mod tests {
     async fn d_ifftxd_fft_works() {
         let rng = &mut ark_std::test_rng();
         let pp = PackedSharingParams::<F>::new(L);
-        let degree2 = false;
         let constraint = Radix2EvaluationDomain::<F>::new(M).unwrap();
         let network = LocalTestNet::new_local_testnet(pp.n).await.unwrap();
         let mut x = (0..M).map(|_| F::rand(rng)).collect::<Vec<_>>();
@@ -492,17 +472,16 @@ mod tests {
         eprintln!("Running d_ifftxd_ifft ...");
         let result = network
             .simulate_network_round(
-                (pevals, pp, constraint, degree2),
-                |net, (pcoeff, pp, constraint, degree2)| async move {
+                (pevals, pp, constraint),
+                |net, (pcoeff, pp, constraint)| async move {
                     let idx = net.party_id() as usize;
                     let peval_share =
                         pcoeff.iter().map(|x| x[idx]).collect::<Vec<_>>();
                     let p_coeff = d_ifft(
                         peval_share,
                         true,
-                        1,
-                        degree2,
                         &constraint,
+                        F::one(),
                         &pp,
                         &net,
                         MultiplexedStreamID::Zero,
@@ -512,8 +491,6 @@ mod tests {
                     d_fft(
                         p_coeff,
                         false,
-                        1,
-                        degree2,
                         &constraint,
                         &pp,
                         &net,
@@ -551,6 +528,95 @@ mod tests {
             }
         }
         eprintln!("```");
+
+        assert_eq!(expected_x, computed_x);
+    }
+
+    #[tokio::test]
+    async fn coset_d_ifftxd_fft_works() {
+        let rng = &mut ark_std::test_rng();
+        let pp = PackedSharingParams::<F>::new(L);
+        let constraint = Radix2EvaluationDomain::<F>::new(M).unwrap();
+        let constraint_coset = constraint.get_coset(F::GENERATOR).unwrap();
+        let network = LocalTestNet::new_local_testnet(pp.n).await.unwrap();
+        let mut x = (0..M).map(|_| F::rand(rng)).collect::<Vec<_>>();
+        let expected_x = x.clone();
+
+        fft_in_place_rearrange(&mut x);
+        let mut pevals: Vec<Vec<F>> = Vec::new();
+        for i in 0..M / pp.l {
+            pevals.push(
+                x.iter()
+                    .skip(i)
+                    .step_by(M / pp.l)
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            );
+            pp.pack_from_public_in_place(&mut pevals[i]);
+        }
+
+        eprintln!("Running coset_d_ifftxd_ifft ...");
+        let result = network
+            .simulate_network_round(
+                (pevals, pp, constraint, constraint_coset),
+                |net, (pcoeff, pp, constraint, constraint_coset)| async move {
+                    let idx = net.party_id() as usize;
+                    let peval_share =
+                        pcoeff.iter().map(|x| x[idx]).collect::<Vec<_>>();
+                    // starting with evals over dom
+                    let p_coeff = d_ifft(
+                        peval_share,
+                        true,
+                        &constraint,
+                        constraint_coset.coset_offset(),
+                        &pp,
+                        &net,
+                        MultiplexedStreamID::Zero,
+                    )
+                    .await
+                    .unwrap();
+                    let coset_peval_share = d_fft(
+                        p_coeff,
+                        true,
+                        &constraint,
+                        &pp,
+                        &net,
+                        MultiplexedStreamID::Zero,
+                    )
+                    .await
+                    .unwrap();
+                    // obtained evals over coset_dom
+                    let p_coeff = d_ifft(
+                        coset_peval_share,
+                        true,
+                        &constraint,
+                        constraint_coset.coset_offset_inv(),
+                        &pp,
+                        &net,
+                        MultiplexedStreamID::Zero,
+                    )
+                    .await
+                    .unwrap();
+                    d_fft(
+                        p_coeff,
+                        false,
+                        &constraint,
+                        &pp,
+                        &net,
+                        MultiplexedStreamID::Zero,
+                    )
+                    .await
+                    .unwrap()
+                    // back to evals over dom
+                },
+            )
+            .await;
+        eprintln!("coset_d_ifftxd_fft done ...");
+        eprintln!("Computing x evals from the shares ...");
+        let computed_x = transpose(result)
+            .into_iter()
+            .flat_map(|x| pp.unpack(x))
+            .collect::<Vec<_>>();
 
         assert_eq!(expected_x, computed_x);
     }
