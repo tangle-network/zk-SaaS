@@ -1,10 +1,8 @@
 use ark_ff::{FftField, PrimeField};
 use ark_poly::EvaluationDomain;
-use ark_relations::r1cs::SynthesisError;
 use ark_std::cfg_into_iter;
 use dist_primitives::channel::MpcSerNet;
 use dist_primitives::dfft::{d_fft, d_ifft};
-use dist_primitives::utils::pack::{pack_vec, transpose};
 use mpc_net::{MpcNetError, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
 
@@ -27,84 +25,50 @@ pub async fn h<
     const CHANNEL2: MultiplexedStreamID = MultiplexedStreamID::Two;
 
     let domain = qap_share.domain;
+    let coset_dom = domain.get_coset(F::GENERATOR).unwrap();
     let m = domain.size();
-    let domain2 =
-        D::new(2 * m).ok_or(SynthesisError::PolynomialDegreeTooLarge)?;
 
     let a_coeff_fut =
-        d_ifft(qap_share.a, true, &domain, pp, net, CHANNEL0);
+        d_ifft(qap_share.a, true, &domain, coset_dom.coset_offset(), pp, net, CHANNEL0);
     let b_coeff_fut =
-        d_ifft(qap_share.b, true, &domain, pp, net, CHANNEL1);
+        d_ifft(qap_share.b, true, &domain, coset_dom.coset_offset(), pp, net, CHANNEL1);
     let c_coeff_fut =
-        d_ifft(qap_share.c, true, &domain, pp, net, CHANNEL2);
+        d_ifft(qap_share.c, true, &domain, coset_dom.coset_offset(), pp, net, CHANNEL2);
 
     let (a_coeff, b_coeff, c_coeff) =
         tokio::try_join!(a_coeff_fut, b_coeff_fut, c_coeff_fut)?;
 
-    /*
-    let p_eval_fut =
-        d_fft(p_coeff, false, 1, false, &domain2, pp, net, CHANNEL0);
-    let q_eval_fut =
-        d_fft(q_coeff, false, 1, false, &domain2, pp, net, CHANNEL1);
-    let w_eval_fut =
-        d_fft(w_coeff, false, 1, false, &domain2, pp, net, CHANNEL2);
+    let a_eval_fut =
+        d_fft(a_coeff, true, &domain, pp, net, CHANNEL0);
+    let b_eval_fut =
+        d_fft(b_coeff, true, &domain, pp, net, CHANNEL1);
+    let c_eval_fut =
+        d_fft(c_coeff, true, &domain, pp, net, CHANNEL2);
 
-    let (p_eval, q_eval, w_eval) =
-        tokio::try_join!(p_eval_fut, q_eval_fut, w_eval_fut)?;
+    
+    // evaluations of a, b, c over the coset
+    let (a_eval, b_eval, c_eval) =
+        tokio::try_join!(a_eval_fut, b_eval_fut, c_eval_fut)?;
 
-    let received_p_shares_fut = net.send_to_king(&p_eval, CHANNEL0);
-    let received_q_shares_fut = net.send_to_king(&q_eval, CHANNEL1);
-    let received_w_shares_fut = net.send_to_king(&w_eval, CHANNEL2);
+    // compute (a.b-c)/z
+    let vanishing_polynomial_over_coset = domain
+            .evaluate_vanishing_polynomial(F::GENERATOR)
+            .inverse()
+            .unwrap();
 
-    // Send the shares to the king to do the final computation
-    let (received_p_shares, received_q_shares, received_w_shares) = tokio::try_join!(
-        received_p_shares_fut,
-        received_q_shares_fut,
-        received_w_shares_fut
-    )?;
-    // King receives shares of p, q, w
-    let h_share = if let (Some(p_shares), Some(q_shares), Some(w_shares)) =
-        (received_p_shares, received_q_shares, received_w_shares)
-    {
-        let unpack_shares = |v| {
-            let mut s1 = cfg_into_iter!(transpose(v))
-                .flat_map(|x| pp.unpack(x))
-                .collect::<Vec<_>>();
-            // swap each ith element with l*i+t element
-            // TODO: Guru should help explaining this
-            for i in 0..m {
-                s1.swap(i, i * pp.l + pp.t);
-            }
-            s1
-        };
-        let mut p_eval = unpack_shares(p_shares);
-        let mut q_eval = unpack_shares(q_shares);
-        let mut w_eval = unpack_shares(w_shares);
+    let h_eval = cfg_into_iter!(a_eval)
+        .zip(b_eval)
+        .zip(c_eval)
+        .map(|((a, b), c)| (a*b - c)*vanishing_polynomial_over_coset)
+        .collect::<Vec<_>>();
 
-        println!("p_eval:{}", p_eval.len());
-        println!("q_eval:{}", q_eval.len());
-        println!("w_eval:{}", w_eval.len());
+    // run coset_ifft to get back coefficients of h
+    let h_coeff_fut =
+        d_ifft(h_eval, false, &domain, coset_dom.coset_offset_inv(), pp, net, CHANNEL0);
+    
+    let h_coeff = tokio::try_join!(h_coeff_fut)?.0;
 
-        p_eval.truncate(m);
-        q_eval.truncate(m);
-        w_eval.truncate(m);
-
-        // King do the final step of multiplication.
-        let h = cfg_into_iter!(p_eval)
-            .zip(q_eval)
-            .zip(w_eval)
-            .map(|((p, q), w)| p.mul(q).sub(w))
-            .collect::<Vec<_>>();
-        // pack and send to parties
-        let h_shares = transpose(pack_vec(&h, pp));
-        net.recv_from_king(Some(h_shares), CHANNEL0).await?
-    } else {
-        net.recv_from_king(None, CHANNEL0).await?
-    };
-
-    Ok(h_share)
-    */
-    unimplemented!()
+    Ok(h_coeff)
 }
 
 #[cfg(test)]
@@ -112,18 +76,102 @@ mod tests {
     use ark_bn254::Bn254;
     use ark_bn254::Fr as Bn254Fr;
     use ark_circom::{CircomBuilder, CircomConfig, CircomReduction};
+    use ark_groth16::r1cs_to_qap::LibsnarkReduction;
     use ark_groth16::r1cs_to_qap::R1CSToQAP;
     use ark_poly::Radix2EvaluationDomain;
     use ark_relations::r1cs::ConstraintSynthesizer;
     use ark_relations::r1cs::ConstraintSystem;
     use ark_std::cfg_iter;
+    use ark_std::cfg_iter_mut;
+    use dist_primitives::utils::pack::transpose;
     use mpc_net::LocalTestNet;
+
+    use crate::qap::QAP;
 
     use super::*;
     use mpc_net::MpcNet;
 
+    fn ark_h<F: PrimeField>(
+        mut a: Vec<F>,
+        mut b: Vec<F>,
+        mut c: Vec<F>,
+        domain: &Radix2EvaluationDomain<F>,
+    ) -> Vec<F> {
+        
+        domain.ifft_in_place(&mut a);
+        domain.ifft_in_place(&mut b);
+        domain.ifft_in_place(&mut c);
+
+        let coset_domain = domain.get_coset(F::GENERATOR).unwrap();
+
+        coset_domain.fft_in_place(&mut a);
+        coset_domain.fft_in_place(&mut b);
+        coset_domain.fft_in_place(&mut c);
+
+        let mut ab = domain.mul_polynomials_in_evaluation_domain(&a, &b);
+        drop(a);
+        drop(b);
+
+        let vanishing_polynomial_over_coset = domain
+            .evaluate_vanishing_polynomial(F::GENERATOR)
+            .inverse()
+            .unwrap();
+
+        cfg_iter_mut!(ab).zip(c).for_each(|(ab_i, c_i)| {
+            *ab_i -= &c_i;
+            *ab_i *= &vanishing_polynomial_over_coset;
+        });
+
+        coset_domain.ifft_in_place(&mut ab);
+
+        ab
+    }
+
     #[tokio::test]
-    async fn ext_witness_works() {
+    async fn dummy_ext_witness() {
+        let m = 32usize;
+
+        let a = (0..m).map(|x| Bn254Fr::from(x as u64)).collect::<Vec<_>>();
+        let b = (0..m).map(|x| Bn254Fr::from(x as u64)).collect::<Vec<_>>();
+        let c = a.iter().zip(b.iter()).map(|(a, b)| a * b).collect::<Vec<_>>();
+
+        let domain = Radix2EvaluationDomain::<Bn254Fr>::new(m).unwrap();
+
+        let expected_h = ark_h(a.clone(), b.clone(), c.clone(), &domain);
+
+        let pp = PackedSharingParams::<Bn254Fr>::new(2);
+        let qap = QAP::<Bn254Fr, Radix2EvaluationDomain<_>> {
+            num_inputs: 0,
+            num_constraints: 0,
+            a,
+            b,
+            c,
+            domain,
+        };
+        let qap_shares = qap.pss(&pp);
+        let network = LocalTestNet::new_local_testnet(pp.n).await.unwrap();
+
+        let result = network
+            .simulate_network_round(
+                (pp.clone(), qap_shares),
+                |net, (pp, qap_shares)| async move {
+                    h(qap_shares[net.party_id() as usize].clone(), &pp, &net)
+                        .await
+                        .unwrap()
+                },
+            )
+            .await;
+
+        let computed_h = transpose(result)
+            .into_iter()
+            .flat_map(|x| pp.unpack2(x))
+            .collect::<Vec<_>>();
+
+        assert_eq!(expected_h, computed_h);
+    }
+
+    #[tokio::test]
+    async fn ext_witness_ark() {
         let cfg = CircomConfig::<Bn254>::new(
             "../fixtures/sha256/sha256_js/sha256.wasm",
             "../fixtures/sha256/sha256.r1cs",
@@ -141,14 +189,29 @@ mod tests {
 
         let num_inputs = matrices.num_instance_variables;
         let num_constraints = matrices.num_constraints;
-        let expected_h =
-            CircomReduction::witness_map_from_matrices::<
-                Bn254Fr,
-                Radix2EvaluationDomain<_>,
-            >(
-                &matrices, num_inputs, num_constraints, &full_assignment
-            )
-            .unwrap();
+        // let expected_h =
+        //     CircomReduction::witness_map_from_matrices::<
+        //         Bn254Fr,
+        //         Radix2EvaluationDomain<_>,
+        //     >(
+        //         &matrices, num_inputs, num_constraints, &full_assignment
+        //     )
+        //     .unwrap();
+        let ark_h = LibsnarkReduction::witness_map_from_matrices::<
+        Bn254Fr,
+        Radix2EvaluationDomain<_>,
+        >(
+            &matrices,
+            num_inputs,
+            num_constraints,
+            &full_assignment,
+        ).unwrap();
+
+        // // collect alternate entrries from expected_h
+        // let should_be_h = expected_h.iter().step_by(2).skip(1).map(|x| *x).collect::<Vec<_>>();
+        // assert_eq!(should_be_h, ark_h);
+
+
         let qap = crate::qap::qap::<Bn254Fr, Radix2EvaluationDomain<_>>(
             &matrices,
             &full_assignment,
@@ -170,29 +233,31 @@ mod tests {
 
         let computed_h = transpose(result)
             .into_iter()
-            .flat_map(|x| pp.unpack(x))
+            .flat_map(|x| pp.unpack2(x))
             .collect::<Vec<_>>();
 
-        eprintln!("```");
-        for i in 0..expected_h.len() {
-            eprintln!("ACTL: {}", expected_h[i]);
-            eprintln!("COMP: {}", computed_h[i]);
-            if expected_h[i] == computed_h[i] {
-                eprintln!("..{i}th element Matched ✅");
-            } else {
-                eprintln!("..{i}th element Mismatched ❌");
-                // search for the element in actual_x_coeff
-                let found =
-                    cfg_iter!(computed_h).position(|&x| x == expected_h[i]);
-                match found {
-                    Some(i) => eprintln!(
-                        "....However, it has been found at index: {i} ⚠️"
-                    ),
-                    None => eprintln!("....and Not found at all 🤔"),
-                }
-            }
-            assert_eq!(computed_h[i], expected_h[i]);
-        }
-        eprintln!("```");
+        assert_eq!(ark_h, computed_h);
+
+        // eprintln!("```");
+        // for i in 0..expected_h.len() {
+        //     eprintln!("ACTL: {}", expected_h[i]);
+        //     eprintln!("COMP: {}", computed_h[i]);
+        //     if expected_h[i] == computed_h[i] {
+        //         eprintln!("..{i}th element Matched ✅");
+        //     } else {
+        //         eprintln!("..{i}th element Mismatched ❌");
+        //         // search for the element in actual_x_coeff
+        //         let found =
+        //             cfg_iter!(computed_h).position(|&x| x == expected_h[i]);
+        //         match found {
+        //             Some(i) => eprintln!(
+        //                 "....However, it has been found at index: {i} ⚠️"
+        //             ),
+        //             None => eprintln!("....and Not found at all 🤔"),
+        //         }
+        //     }
+        //     assert_eq!(computed_h[i], expected_h[i]);
+        // }
+        // eprintln!("```");
     }
 }
