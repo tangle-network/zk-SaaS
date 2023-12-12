@@ -47,8 +47,7 @@ pub async fn d_fft<
     .await
 }
 
-/// additionally distribute powers of domain.offset over the resulting coefficients
-/// providing as input the coset domain will help with carrying out coset-FFT
+/// additionally distribute powers of g over the resulting coefficients
 pub async fn d_ifft<
     F: FftField + PrimeField,
     D: EvaluationDomain<F>,
@@ -57,7 +56,7 @@ pub async fn d_ifft<
     mut peval_share: Vec<F>,
     rearrange: bool,
     dom: &D,
-    offset: F,
+    g: F,
     pp: &PackedSharingParams<F>,
     net: &Net,
     sid: MultiplexedStreamID,
@@ -78,7 +77,7 @@ pub async fn d_ifft<
     fft2_with_rearrange(
         peval_share,
         rearrange,
-        offset,
+        g,
         pp,
         dom.group_gen_inv(),
         net,
@@ -88,10 +87,7 @@ pub async fn d_ifft<
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
-fn fft1_in_place<
-    F: FftField + PrimeField,
-    Net: MpcSerNet,
->(
+fn fft1_in_place<F: FftField + PrimeField, Net: MpcSerNet>(
     px: &mut Vec<F>,
     pp: &PackedSharingParams<F>,
     gen: F,
@@ -132,10 +128,7 @@ fn fft1_in_place<
     }
 }
 
-fn fft2_in_place<
-    F: FftField + PrimeField,
-    Net: MpcSerNet,
->(
+fn fft2_in_place<F: FftField + PrimeField, Net: MpcSerNet>(
     s1: &mut Vec<F>,
     pp: &PackedSharingParams<F>,
     gen: F,
@@ -174,13 +167,10 @@ fn fft2_in_place<
 }
 
 /// Send shares after fft1 to king who finishes the protocol and returns packed shares
-async fn fft2_with_rearrange<
-    F: FftField + PrimeField,
-    Net: MpcSerNet,
->(
+async fn fft2_with_rearrange<F: FftField + PrimeField, Net: MpcSerNet>(
     px: Vec<F>,
     rearrange: bool,
-    offset: F,
+    g: F,
     pp: &PackedSharingParams<F>,
     gen: F,
     net: &Net,
@@ -207,8 +197,8 @@ async fn fft2_with_rearrange<
 
         fft2_in_place(&mut s1, pp, gen, &net); // s1 constrains final output now
 
-        if !(offset == F::one()) {
-            Radix2EvaluationDomain::<F>::distribute_powers(&mut s1, offset);
+        if !(g == F::one()) {
+            Radix2EvaluationDomain::<F>::distribute_powers(&mut s1, g);
         }
 
         // Optionally rearrange to get ready for next FFT/IFFT
@@ -261,7 +251,7 @@ mod tests {
     use super::*;
     use ark_bls12_377::Fr as F;
     use ark_poly::Radix2EvaluationDomain;
-    use ark_std::{UniformRand, One};
+    use ark_std::{One, UniformRand};
     use mpc_net::LocalTestNet;
     use mpc_net::MpcNet;
 

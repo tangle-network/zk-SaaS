@@ -39,7 +39,7 @@ where
     E: Pairing,
     Net: MpcNet,
 {
-    let h_share = ext_wit::h(qap_share, pp, &net).await.unwrap();
+    let h_share = ext_wit::circom_h(qap_share, pp, &net).await.unwrap();
     let msm_section = start_timer!(|| "MSM operations");
     // Compute msm while dropping the base vectors as they are not used again
     let compute_a = start_timer!(|| "Compute A");
