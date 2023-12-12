@@ -6,7 +6,6 @@ use dist_primitives::dfft::{d_fft, d_ifft};
 use dist_primitives::utils::deg_red::deg_red;
 use mpc_net::{MpcNetError, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
-
 use crate::qap::PackedQAPShare;
 
 #[cfg(feature = "parallel")]
@@ -401,7 +400,6 @@ mod tests {
             .into_iter()
             .flat_map(|x| pp.unpack(x))
             .collect::<Vec<_>>();
-
         // todo: need to do degree reduction here.
         assert_eq!(h, computed_h);
     }
