@@ -141,9 +141,7 @@ pub async fn circom_h<
         .map(|((a, b), c)| (a * b - c))
         .collect::<Vec<_>>();
 
-    let h_eval_red_fut = deg_red(h_eval, pp, net, CHANNEL0);
-
-    let h_eval_red = tokio::try_join!(h_eval_red_fut)?.0;
+    let h_eval_red = deg_red(h_eval, pp, net, CHANNEL0).await?;
     Ok(h_eval_red)
 }
 
