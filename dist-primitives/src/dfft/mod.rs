@@ -197,7 +197,7 @@ async fn fft2_with_rearrange<F: FftField + PrimeField, Net: MpcSerNet>(
 
         fft2_in_place(&mut s1, pp, gen, &net); // s1 constrains final output now
 
-        if !(g == F::one()) {
+        if g != F::one() {
             Radix2EvaluationDomain::<F>::distribute_powers(&mut s1, g);
         }
 
