@@ -163,7 +163,6 @@ mod tests {
     use ark_circom::{CircomBuilder, CircomConfig, CircomReduction};
     use ark_crypto_primitives::snark::SNARK;
     use ark_groth16::Groth16;
-    use ark_std::cfg_chunks_mut;
 
     const L: usize = 2;
 
