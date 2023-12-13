@@ -40,18 +40,10 @@ pub async fn d_fft_test<F: FftField + PrimeField, Net: MpcNet>(
 
     // Rearranging x
 
-    let peval_share = d_fft(
-        pcoeff_share,
-        false,
-        1,
-        false,
-        dom,
-        pp,
-        net,
-        MultiplexedStreamID::One,
-    )
-    .await
-    .unwrap();
+    let peval_share =
+        d_fft(pcoeff_share, false, dom, pp, net, MultiplexedStreamID::One)
+            .await
+            .unwrap();
 
     // Send to king who reconstructs and checks the answer
     let result = net
