@@ -3,9 +3,9 @@ use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_std::cfg_into_iter;
 use dist_primitives::channel::MpcSerNet;
 use dist_primitives::dfft::{d_fft, d_ifft};
+use dist_primitives::utils::deg_red::deg_red;
 use mpc_net::{MpcNetError, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
-use dist_primitives::utils::deg_red::deg_red;
 
 use crate::qap::PackedQAPShare;
 
@@ -112,41 +112,20 @@ pub async fn circom_h<
     let root_of_unity = {
         let domain_size_double = 2 * domain.size();
         let domain_double =
-        Radix2EvaluationDomain::<F>::new(domain_size_double).unwrap();
+            Radix2EvaluationDomain::<F>::new(domain_size_double).unwrap();
         domain_double.element(1)
     };
-    
-    let a_coeff_fut = d_ifft(
-        qap_share.a,
-        true,
-        &domain,
-        root_of_unity,
-        pp,
-        net,
-        CHANNEL0,
-    );
-    let b_coeff_fut = d_ifft(
-        qap_share.b,
-        true,
-        &domain,
-        root_of_unity,
-        pp,
-        net,
-        CHANNEL1,
-    );
-    let c_coeff_fut = d_ifft(
-        qap_share.c,
-        true,
-        &domain,
-        root_of_unity,
-        pp,
-        net,
-        CHANNEL2,
-    );
+
+    let a_coeff_fut =
+        d_ifft(qap_share.a, true, &domain, root_of_unity, pp, net, CHANNEL0);
+    let b_coeff_fut =
+        d_ifft(qap_share.b, true, &domain, root_of_unity, pp, net, CHANNEL1);
+    let c_coeff_fut =
+        d_ifft(qap_share.c, true, &domain, root_of_unity, pp, net, CHANNEL2);
 
     let (a_coeff, b_coeff, c_coeff) =
         tokio::try_join!(a_coeff_fut, b_coeff_fut, c_coeff_fut)?;
-    
+
     let a_eval_fut = d_fft(a_coeff, false, &domain, pp, net, CHANNEL0);
     let b_eval_fut = d_fft(b_coeff, false, &domain, pp, net, CHANNEL1);
     let c_eval_fut = d_fft(c_coeff, false, &domain, pp, net, CHANNEL2);
@@ -233,11 +212,19 @@ mod tests {
         let root_of_unity = {
             let domain_size_double = 2 * domain.size();
             let domain_double =
-            Radix2EvaluationDomain::<F>::new(domain_size_double).unwrap();
+                Radix2EvaluationDomain::<F>::new(domain_size_double).unwrap();
             domain_double.element(1)
         };
-        Radix2EvaluationDomain::<F>::distribute_powers_and_mul_by_const(&mut a, root_of_unity, F::one());
-        Radix2EvaluationDomain::<F>::distribute_powers_and_mul_by_const(&mut b, root_of_unity, F::one());
+        Radix2EvaluationDomain::<F>::distribute_powers_and_mul_by_const(
+            &mut a,
+            root_of_unity,
+            F::one(),
+        );
+        Radix2EvaluationDomain::<F>::distribute_powers_and_mul_by_const(
+            &mut b,
+            root_of_unity,
+            F::one(),
+        );
 
         domain.fft_in_place(&mut a);
         domain.fft_in_place(&mut b);
@@ -247,7 +234,11 @@ mod tests {
         drop(b);
 
         domain.ifft_in_place(&mut c);
-        Radix2EvaluationDomain::<F>::distribute_powers_and_mul_by_const(&mut c, root_of_unity, F::one());
+        Radix2EvaluationDomain::<F>::distribute_powers_and_mul_by_const(
+            &mut c,
+            root_of_unity,
+            F::one(),
+        );
         domain.fft_in_place(&mut c);
 
         cfg_iter_mut!(ab)
@@ -289,9 +280,13 @@ mod tests {
             .simulate_network_round(
                 (pp.clone(), qap_shares),
                 |net, (pp, qap_shares)| async move {
-                    libsnark_h(qap_shares[net.party_id() as usize].clone(), &pp, &net)
-                        .await
-                        .unwrap()
+                    libsnark_h(
+                        qap_shares[net.party_id() as usize].clone(),
+                        &pp,
+                        &net,
+                    )
+                    .await
+                    .unwrap()
                 },
             )
             .await;
@@ -336,9 +331,13 @@ mod tests {
             .simulate_network_round(
                 (pp.clone(), qap_shares),
                 |net, (pp, qap_shares)| async move {
-                    circom_h(qap_shares[net.party_id() as usize].clone(), &pp, &net)
-                        .await
-                        .unwrap()
+                    circom_h(
+                        qap_shares[net.party_id() as usize].clone(),
+                        &pp,
+                        &net,
+                    )
+                    .await
+                    .unwrap()
                 },
             )
             .await;
@@ -370,14 +369,13 @@ mod tests {
 
         let num_inputs = matrices.num_instance_variables;
         let num_constraints = matrices.num_constraints;
-        let h =
-            CircomReduction::witness_map_from_matrices::<
-                Bn254Fr,
-                Radix2EvaluationDomain<_>,
-            >(
-                &matrices, num_inputs, num_constraints, &full_assignment
-            )
-            .unwrap();
+        let h = CircomReduction::witness_map_from_matrices::<
+            Bn254Fr,
+            Radix2EvaluationDomain<_>,
+        >(
+            &matrices, num_inputs, num_constraints, &full_assignment
+        )
+        .unwrap();
 
         let qap = crate::qap::qap::<Bn254Fr, Radix2EvaluationDomain<_>>(
             &matrices,
@@ -391,9 +389,13 @@ mod tests {
             .simulate_network_round(
                 (pp.clone(), qap_shares),
                 |net, (pp, qap_shares)| async move {
-                    circom_h(qap_shares[net.party_id() as usize].clone(), &pp, &net)
-                        .await
-                        .unwrap()
+                    circom_h(
+                        qap_shares[net.party_id() as usize].clone(),
+                        &pp,
+                        &net,
+                    )
+                    .await
+                    .unwrap()
                 },
             )
             .await;
@@ -402,7 +404,7 @@ mod tests {
             .into_iter()
             .flat_map(|x| pp.unpack(x))
             .collect::<Vec<_>>();
-        
+
         // todo: need to do degree reduction here.
         assert_eq!(h, computed_h);
     }
