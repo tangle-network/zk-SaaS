@@ -80,7 +80,7 @@ pub async fn libsnark_h<
         .collect::<Vec<_>>();
 
     // run coset_ifft to get back coefficients of h
-    let h_coeff_fut = d_ifft(
+    let h_coeff = d_ifft(
         h_eval,
         false,
         &domain,
@@ -88,9 +88,7 @@ pub async fn libsnark_h<
         pp,
         net,
         CHANNEL0,
-    );
-
-    let h_coeff = tokio::try_join!(h_coeff_fut)?.0;
+    ).await?;
 
     Ok(h_coeff)
 }
