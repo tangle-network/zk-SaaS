@@ -88,7 +88,8 @@ pub async fn libsnark_h<
         pp,
         net,
         CHANNEL0,
-    ).await?;
+    )
+    .await?;
 
     Ok(h_coeff)
 }
