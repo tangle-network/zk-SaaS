@@ -51,7 +51,6 @@ mod tests {
         let pp = PackedSharingParams::<F>::new(L);
         let rng = &mut ark_std::test_rng();
         let network = LocalTestNet::new_local_testnet(pp.n).await.unwrap();
-
         let secrets: [F; L] = UniformRand::rand(rng);
         let secrets = secrets.to_vec();
         let expected: Vec<F> = secrets.iter().map(|x| (*x) * (*x)).collect();
