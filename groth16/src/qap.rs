@@ -96,20 +96,20 @@ impl<F: PrimeField, D: EvaluationDomain<F> + Send> QAP<F, D> {
         let num_inputs = self.num_inputs;
         let num_constraints = self.num_constraints;
         let domain = self.domain;
-
-        let pack = |mut x: Vec<F>| {
+        let rng = &mut ark_std::test_rng();
+        let mut pack = |mut x: Vec<F>| {
             fft_in_place_rearrange(&mut x);
             let mut pevals: Vec<Vec<F>> = Vec::new();
             let m = x.len();
             for i in 0..m / pp.l {
+                let secrets = cfg_iter!(x)
+                .skip(i)
+                .step_by(m / pp.l)
+                .cloned()
+                .collect::<Vec<_>>();
                 pevals.push(
-                    cfg_iter!(x)
-                        .skip(i)
-                        .step_by(m / pp.l)
-                        .cloned()
-                        .collect::<Vec<_>>(),
+                    pp.pack(secrets, rng)
                 );
-                pp.pack_from_public_in_place(&mut pevals[i]);
             }
             pevals
         };

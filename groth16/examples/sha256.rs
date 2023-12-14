@@ -99,6 +99,7 @@ fn pack_from_witness<E: Pairing>(
     pp: &PackedSharingParams<E::ScalarField>,
     full_assignment: Vec<E::ScalarField>,
 ) -> Vec<Vec<E::ScalarField>> {
+    let rng = &mut ark_std::test_rng();
     let packed_assignments = cfg_chunks!(full_assignment, pp.l)
         .map(|chunk| {
             let secrets = if chunk.len() < pp.l {
@@ -108,7 +109,7 @@ fn pack_from_witness<E: Pairing>(
             } else {
                 chunk.to_vec()
             };
-            pp.pack_from_public(secrets)
+            pp.pack(secrets, rng)
         })
         .collect::<Vec<_>>();
 
@@ -166,11 +167,10 @@ async fn main() {
 
     let pp = PackedSharingParams::new(2);
     let qap_shares = qap.pss(&pp);
-    let pp_g1 = PackedSharingParams::new(pp.l);
-    let pp_g2 = PackedSharingParams::new(pp.l);
+    let pp = PackedSharingParams::new(pp.l);
     let crs_shares =
         PackedProvingKeyShare::<Bn254>::pack_from_arkworks_proving_key(
-            &pk, pp_g1, pp_g2,
+            &pk, pp,
         );
     let crs_shares = Arc::new(crs_shares);
     let qap_shares = Arc::new(qap_shares);
