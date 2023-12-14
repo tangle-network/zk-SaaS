@@ -1,6 +1,7 @@
-use ark_poly::{domain::EvaluationDomain, Radix2EvaluationDomain};
+use ark_poly::{domain::{EvaluationDomain, DomainCoeff}, Radix2EvaluationDomain};
 
 use ark_ff::FftField;
+use ark_std::{UniformRand, rand::Rng};
 
 /// Packed Secret Sharing Parameters
 ///
@@ -60,91 +61,87 @@ impl<F: FftField> PackedSharingParams<F> {
         }
     }
 
-    /// Packs secrets into shares
+    /// Deterministically packs secrets into shares
     #[allow(unused)]
-    pub fn pack_from_public(&self, mut secrets: Vec<F>) -> Vec<F> {
-        assert!(secrets.len() == self.l, "Secrets length mismatch");
-        self.pack_from_public_in_place(&mut secrets);
-        secrets
-    }
+    pub fn det_pack<T: DomainCoeff<F> + UniformRand>(&self, secrets: Vec<T>) -> Vec<T> {
+        debug_assert!(secrets.len() == self.l, "Secrets length mismatch");
+        
+        let mut result = secrets;
 
-    #[allow(unused)]
-    pub fn pack_from_public_rand(&self, mut secrets: Vec<F>) -> Vec<F> {
-        assert!(secrets.len() == self.l, "Secrets length mismatch");
-        let mut rng = ark_std::test_rng();
-        // Resize the secrets with t+1 random points
-        let rand_points = (0..self.t + 1)
-            .map(|_| F::rand(&mut rng))
-            .collect::<Vec<F>>();
-        secrets.extend_from_slice(&rand_points);
-        self.pack_from_public_in_place(&mut secrets);
-        secrets
-    }
+        // Resize the secrets with t+1 zeros
+        result.append(&mut vec![T::zero(); self.t + 1]);
 
-    /// Packs secrets into shares in place
-    #[allow(unused)]
-    pub fn pack_from_public_in_place(&self, secrets: &mut Vec<F>) {
         // interpolating on secrets domain
-        self.secret.ifft_in_place(secrets);
+        self.secret.ifft_in_place(&mut result);
 
         // evaluate on share domain
-        self.share.fft_in_place(secrets);
+        self.share.fft_in_place(&mut result);
+
+        result
+    }
+
+    /// Packs secrets into shares
+    #[allow(unused)]
+    pub fn pack<T: DomainCoeff<F> + UniformRand>(&self, secrets: Vec<T>, rng: &mut impl Rng) -> Vec<T> {
+        debug_assert!(secrets.len() == self.l, "Secrets length mismatch");
+        
+        let mut result = secrets;
+
+        // Resize the secrets with t+1 random points
+        let rand_points = (0..self.t + 1)
+            .map(|_| T::rand(rng))
+            .collect::<Vec<T>>();
+        result.extend_from_slice(&rand_points);
+
+        // interpolating on secrets domain
+        self.secret.ifft_in_place(&mut result);
+
+        // evaluate on share domain
+        self.share.fft_in_place(&mut result);
+
+        result
     }
 
     /// Unpacks shares of degree t+l into secrets
     #[allow(unused)]
-    pub fn unpack(&self, mut shares: Vec<F>) -> Vec<F> {
-        self.unpack_in_place(&mut shares);
-        shares
+    pub fn unpack<T: DomainCoeff<F>>(&self, shares: Vec<T>) -> Vec<T> {
+        let mut result = shares;
+
+        // interpolating on share domain
+        self.share.ifft_in_place(&mut result);
+
+        // evaluate on secrets domain
+        self.secret.fft_in_place(&mut result);
+
+        // truncate to remove the randomness
+        result.truncate(self.l);
+
+        result
     }
 
     /// Unpacks shares of degree 2(t+l) into secrets
     #[allow(unused)]
-    pub fn unpack2(&self, mut shares: Vec<F>) -> Vec<F> {
-        self.unpack2_in_place(&mut shares);
-        shares
-    }
+    pub fn unpack2<T: DomainCoeff<F>>(&self, shares: Vec<T>) -> Vec<T> {
+        let mut result = shares;
 
-    /// Unpacks shares of degree t+l into secrets in place
-    #[allow(unused)]
-    pub fn unpack_in_place(&self, shares: &mut Vec<F>) {
         // interpolating on share domain
-        self.share.ifft_in_place(shares);
-
-        // assert that all but first t+l+1 elements are zero
-        // #[cfg(debug_assertions)]
-        // {
-        //     for i in self.l + self.t + 1..shares.len() {
-        //         debug_assert!(shares[i].is_zero(), "Unpack failed");
-        //     }
-        // }
-
-        // evaluate on secrets domain
-        self.secret.fft_in_place(shares);
-
-        // truncate to remove the randomness
-        shares.truncate(self.l);
-    }
-
-    /// Unpacks shares of degree 2(t+l) into secrets in place
-    #[allow(unused)]
-    pub fn unpack2_in_place(&self, shares: &mut Vec<F>) {
-        // interpolating on share domain
-        self.share.ifft_in_place(shares);
+        self.share.ifft_in_place(&mut result);
 
         // assert that all but first 2(t+l)+1 elements are zero
         #[cfg(debug_assertions)]
         {
-            for item in shares.iter().skip(2 * (self.l + self.t) + 1) {
+            for item in result.iter().skip(2 * (self.l + self.t) + 1) {
                 debug_assert!(item.is_zero(), "Unpack2 failed");
             }
         }
 
         // evaluate on secrets domain
-        self.secret2.fft_in_place(shares);
+        self.secret2.fft_in_place(&mut result);
 
         // drop alternate elements from shares array and only iterate till 2l as the rest of it is randomness
-        *shares = shares[0..2 * self.l].iter().step_by(2).copied().collect();
+        result = result[0..2 * self.l].iter().step_by(2).copied().collect();
+
+        result
     }
 }
 
@@ -172,17 +169,33 @@ mod tests {
     }
 
     #[test]
-    fn test_pack_from_public() {
+    fn test_packing() {
         let pp = PackedSharingParams::<F>::new(L);
 
         let rng = &mut ark_std::test_rng();
         let secrets: [F; L] = UniformRand::rand(rng);
-        let mut secrets = secrets.to_vec();
+        let secrets = secrets.to_vec();
 
         let expected = secrets.clone();
 
-        pp.pack_from_public_in_place(&mut secrets);
-        pp.unpack_in_place(&mut secrets);
+        let shares = pp.pack(secrets, rng);
+        let secrets = pp.unpack(shares);
+
+        assert_eq!(expected, secrets);
+    }
+
+    #[test]
+    fn test_det_packing() {
+        let pp = PackedSharingParams::<F>::new(L);
+
+        let rng = &mut ark_std::test_rng();
+        let secrets: [F; L] = UniformRand::rand(rng);
+        let secrets = secrets.to_vec();
+
+        let expected = secrets.clone();
+
+        let shares = pp.det_pack(secrets);
+        let secrets = pp.unpack(shares);
 
         assert_eq!(expected, secrets);
     }
@@ -193,49 +206,13 @@ mod tests {
 
         let rng = &mut ark_std::test_rng();
         let secrets: [F; L] = UniformRand::rand(rng);
-        let mut secrets = secrets.to_vec();
+        let secrets = secrets.to_vec();
         let expected: Vec<F> = secrets.iter().map(|x| (*x) * (*x)).collect();
 
-        pp.pack_from_public_in_place(&mut secrets);
+        let shares = pp.pack(secrets, rng);
+        let mul_shares: Vec<F> = shares.iter().map(|x| (*x) * (*x)).collect();
+        let mul_secrets = pp.unpack2(mul_shares);
 
-        let mut shares: Vec<F> = secrets.iter().map(|x| (*x) * (*x)).collect();
-
-        pp.unpack2_in_place(&mut shares);
-
-        assert_eq!(expected, shares);
-    }
-
-    #[test]
-    fn test_pack_rand() {
-        let pp = PackedSharingParams::<F>::new(L);
-
-        let rng = &mut ark_std::test_rng();
-        let secrets: [F; L] = UniformRand::rand(rng);
-        let mut secrets = secrets.to_vec();
-
-        let expected = secrets.clone();
-
-        secrets = pp.pack_from_public_rand(secrets);
-        pp.unpack_in_place(&mut secrets);
-
-        assert_eq!(expected, secrets);
-    }
-
-    #[test]
-    fn test_pack_rand_multiplication() {
-        let pp = PackedSharingParams::<F>::new(L);
-
-        let rng = &mut ark_std::test_rng();
-        let secrets: [F; L] = UniformRand::rand(rng);
-        let mut secrets = secrets.to_vec();
-        let expected: Vec<F> = secrets.iter().map(|x| (*x) * (*x)).collect();
-
-        secrets = pp.pack_from_public_rand(secrets);
-
-        let mut shares: Vec<F> = secrets.iter().map(|x| (*x) * (*x)).collect();
-
-        pp.unpack2_in_place(&mut shares);
-
-        assert_eq!(expected, shares);
+        assert_eq!(expected, mul_secrets);
     }
 }
