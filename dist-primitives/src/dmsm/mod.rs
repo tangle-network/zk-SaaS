@@ -67,7 +67,7 @@ mod tests {
         let result = pp.unpack(shares);
         assert_eq!(secrets, result);
     }
-    
+
     #[tokio::test]
     async fn pack_unpack2_test() {
         let pp = PackedSharingParams::<F>::new(L);
@@ -110,5 +110,4 @@ mod tests {
         let result: G1P = pp.unpack2(result).iter().sum();
         assert_eq!(expected, result);
     }
-    
 }
