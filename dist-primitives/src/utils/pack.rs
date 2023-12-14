@@ -1,7 +1,6 @@
 use ark_ff::FftField;
 use rand::thread_rng;
 use secret_sharing::pss::PackedSharingParams;
-use rand::thread_rng;
 
 pub fn pack_vec<F: FftField>(
     secrets: &Vec<F>,
