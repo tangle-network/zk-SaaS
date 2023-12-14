@@ -1,7 +1,10 @@
-use ark_poly::{domain::{EvaluationDomain, DomainCoeff}, Radix2EvaluationDomain};
+use ark_poly::{
+    domain::{DomainCoeff, EvaluationDomain},
+    Radix2EvaluationDomain,
+};
 
 use ark_ff::FftField;
-use ark_std::{UniformRand, rand::Rng};
+use ark_std::{rand::Rng, UniformRand};
 
 /// Packed Secret Sharing Parameters
 ///
@@ -63,9 +66,12 @@ impl<F: FftField> PackedSharingParams<F> {
 
     /// Deterministically packs secrets into shares
     #[allow(unused)]
-    pub fn det_pack<T: DomainCoeff<F> + UniformRand>(&self, secrets: Vec<T>) -> Vec<T> {
+    pub fn det_pack<T: DomainCoeff<F> + UniformRand>(
+        &self,
+        secrets: Vec<T>,
+    ) -> Vec<T> {
         debug_assert!(secrets.len() == self.l, "Secrets length mismatch");
-        
+
         let mut result = secrets;
 
         // Resize the secrets with t+1 zeros
@@ -82,15 +88,18 @@ impl<F: FftField> PackedSharingParams<F> {
 
     /// Packs secrets into shares
     #[allow(unused)]
-    pub fn pack<T: DomainCoeff<F> + UniformRand>(&self, secrets: Vec<T>, rng: &mut impl Rng) -> Vec<T> {
+    pub fn pack<T: DomainCoeff<F> + UniformRand>(
+        &self,
+        secrets: Vec<T>,
+        rng: &mut impl Rng,
+    ) -> Vec<T> {
         debug_assert!(secrets.len() == self.l, "Secrets length mismatch");
-        
+
         let mut result = secrets;
 
         // Resize the secrets with t+1 random points
-        let rand_points = (0..self.t + 1)
-            .map(|_| T::rand(rng))
-            .collect::<Vec<T>>();
+        let rand_points =
+            (0..self.t + 1).map(|_| T::rand(rng)).collect::<Vec<T>>();
         result.extend_from_slice(&rand_points);
 
         // interpolating on secrets domain

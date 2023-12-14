@@ -148,7 +148,6 @@ mod tests {
     #[tokio::test]
     async fn pack_unpack2_test() {
         let net = LocalTestNet::new_local_testnet(4).await.unwrap();
-
         net.simulate_network_round((), |net, _| async move {
             let pp = PackedSharingParams::<F>::new(L);
             let rng = &mut ark_std::test_rng();
@@ -171,7 +170,7 @@ mod tests {
 
             let fshares: Vec<Vec<F>> = fsecrets
                 .chunks(L)
-                .map(|s| pp.pack_from_public(s.to_vec()))
+                .map(|s| pp.pack(s.to_vec(), rng))
                 .collect();
 
             let gshares = transpose(gshares);
