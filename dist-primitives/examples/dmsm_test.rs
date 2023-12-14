@@ -12,7 +12,6 @@ pub async fn d_msm_test<G: CurveGroup, Net: MpcNet>(
     dom: &Radix2EvaluationDomain<G::ScalarField>,
     net: &Net,
 ) {
-    // let m = pp.l*4;
     let mbyl: usize = dom.size() / pp.l;
     println!(
         "m: {}, mbyl: {}, party_id: {}",
@@ -38,7 +37,7 @@ pub async fn d_msm_test<G: CurveGroup, Net: MpcNet>(
 
     let y_share: Vec<G::ScalarField> = y_pub
         .chunks(pp.l)
-        .map(|s| pp.pack_from_public(s.to_vec())[net.party_id() as usize])
+        .map(|s| pp.pack(s.to_vec(), rng)[net.party_id() as usize])
         .collect();
 
     let x_pub_aff: Vec<G::Affine> = x_pub.iter().map(|s| (*s).into()).collect();
