@@ -360,7 +360,7 @@ mod tests {
 
         assert_eq!(poly_evals, computed_poly_evals);
     }
-    /*
+    
     #[tokio::test]
     async fn d_ifftxd_fft_works() {
         let rng = &mut ark_std::test_rng();
@@ -413,7 +413,6 @@ mod tests {
                 },
             )
             .await;
-
         let computed_poly_evals = transpose(result)
             .into_iter()
             .flat_map(|x| pp.unpack(x))
@@ -421,7 +420,7 @@ mod tests {
 
         assert_eq!(expected_evals, computed_poly_evals);
     }
-
+    
     #[tokio::test]
     async fn coset_d_ifftxd_fft_works() {
         let rng = &mut ark_std::test_rng();
@@ -509,5 +508,5 @@ mod tests {
 
         assert_eq!(expected_poly_evals, computed_poly_evals);
     }
-    */
+    
 }
