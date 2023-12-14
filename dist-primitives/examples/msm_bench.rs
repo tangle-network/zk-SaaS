@@ -21,7 +21,7 @@ pub fn msm_test<G: CurveGroup>(dom: &Radix2EvaluationDomain<G::ScalarField>) {
 }
 
 fn main() {
-    for i in 10..20 {
+    for i in 10..15 {
         let dom = Radix2EvaluationDomain::<Fr>::new(1 << i).unwrap();
         println!("domain size: {}", dom.size());
         msm_test::<ark_bls12_377::G1Projective>(&dom);

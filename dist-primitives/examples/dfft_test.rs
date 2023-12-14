@@ -29,10 +29,9 @@ pub async fn d_fft_test<F: FftField + PrimeField, Net: MpcNet>(
     fft_in_place_rearrange(&mut x);
     let mut pcoeff: Vec<Vec<F>> = Vec::new();
     for i in 0..mbyl {
-        let secrets = x.iter().skip(i).step_by(mbyl).cloned().collect::<Vec<_>>();
-        pcoeff.push(
-            pp.pack(secrets, rng)
-        );
+        let secrets =
+            x.iter().skip(i).step_by(mbyl).cloned().collect::<Vec<_>>();
+        pcoeff.push(pp.pack(secrets, rng));
     }
 
     let pcoeff_share = pcoeff

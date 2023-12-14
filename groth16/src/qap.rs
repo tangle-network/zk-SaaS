@@ -103,13 +103,11 @@ impl<F: PrimeField, D: EvaluationDomain<F> + Send> QAP<F, D> {
             let m = x.len();
             for i in 0..m / pp.l {
                 let secrets = cfg_iter!(x)
-                .skip(i)
-                .step_by(m / pp.l)
-                .cloned()
-                .collect::<Vec<_>>();
-                pevals.push(
-                    pp.pack(secrets, rng)
-                );
+                    .skip(i)
+                    .step_by(m / pp.l)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                pevals.push(pp.pack(secrets, rng));
             }
             pevals
         };

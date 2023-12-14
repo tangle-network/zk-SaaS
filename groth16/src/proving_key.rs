@@ -35,7 +35,7 @@ where
         pk: &ark_groth16::ProvingKey<E>,
         pp: PackedSharingParams<
             <<E as Pairing>::G1Affine as AffineRepr>::ScalarField,
-        >
+        >,
     ) -> Vec<Self> {
         let pre_packed_s = cfg_into_iter!(pk.a_query.clone())
             .skip(1)
@@ -57,7 +57,7 @@ where
             .collect::<Vec<_>>();
 
         let rng = &mut ark_std::test_rng();
-        
+
         let packed_s = cfg_chunks!(pre_packed_s, pp.l)
             .map(|chunk| pp.pack::<E::G1>(chunk.to_vec(), rng))
             .collect::<Vec<_>>();
@@ -183,7 +183,7 @@ mod tests {
         let pp = PackedSharingParams::new(L);
         let _shares =
             PackedProvingKeyShare::<Bn254>::pack_from_arkworks_proving_key(
-                &pk, pp
+                &pk, pp,
             );
     }
 }

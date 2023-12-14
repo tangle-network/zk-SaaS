@@ -169,9 +169,7 @@ async fn main() {
     let qap_shares = qap.pss(&pp);
     let pp = PackedSharingParams::new(pp.l);
     let crs_shares =
-        PackedProvingKeyShare::<Bn254>::pack_from_arkworks_proving_key(
-            &pk, pp,
-        );
+        PackedProvingKeyShare::<Bn254>::pack_from_arkworks_proving_key(&pk, pp);
     let crs_shares = Arc::new(crs_shares);
     let qap_shares = Arc::new(qap_shares);
     let aux_assignment = &full_assignment[num_inputs..];
