@@ -17,7 +17,6 @@ pub async fn d_msm<G: CurveGroup, Net: MpcSerNet>(
     debug_assert_eq!(bases.len(), scalars.len());
     log::debug!("bases: {}, scalars: {}", bases.len(), scalars.len());
     let c_share = G::msm(bases, scalars)?;
-
     // Now we do degree reduction -- psstoss
     // Send to king who reduces and sends shamir shares (not packed).
     // Should be randomized. First convert to projective share.
@@ -68,7 +67,7 @@ mod tests {
         let result = pp.unpack(shares);
         assert_eq!(secrets, result);
     }
-
+    
     #[tokio::test]
     async fn pack_unpack2_test() {
         let pp = PackedSharingParams::<F>::new(L);
@@ -111,4 +110,5 @@ mod tests {
         let result: G1P = pp.unpack2(result).iter().sum();
         assert_eq!(expected, result);
     }
+    
 }
