@@ -25,11 +25,9 @@ pub async fn deg_red<
         received_shares.map(|x_shares: Vec<Vec<T>>| {
             let mut x_shares = transpose(x_shares);
 
-            for i in 0..x_shares.len() {
-                let xi: Vec<T> = pp.unpack2(x_shares[i].clone());
-                x_shares[i] = pp.pack(xi, &mut rand::thread_rng());
-                // pp.unpack2_in_place(px_share);
-                // pp.pack_from_public_in_place(px_share);
+            for x_share in &mut x_shares {
+                let xi: Vec<T> = pp.unpack2(x_share.clone());
+                *x_share = pp.pack(xi, &mut rand::thread_rng());
             }
             transpose(x_shares)
         });
