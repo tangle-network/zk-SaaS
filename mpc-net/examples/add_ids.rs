@@ -1,5 +1,6 @@
 // An example ProdNet that performs the simple task of adding up all transmitted IDs
 use mpc_net::prod::{ProdNet, RustlsCertificate};
+use mpc_net::ser_net::MpcSerNet;
 use mpc_net::{MpcNet, MultiplexedStreamID};
 use rustls::{Certificate, PrivateKey, RootCertStore};
 use std::error::Error;
@@ -63,17 +64,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Run the network
     let expected_sum_result = (0..n_parties).map(|r| r as u32).sum::<u32>();
 
-    let bytes = bincode2::serialize(&my_id).unwrap();
     let sum = if let Some(king_recv) = net
-        .client_send_or_king_receive(&bytes, MultiplexedStreamID::Zero)
+        .client_send_or_king_receive_serialized::<u32>(
+            &my_id,
+            MultiplexedStreamID::Zero,
+            0,
+        )
         .await
         .unwrap()
     {
         assert_eq!(my_id, 0);
         // convert each bytes into a u32, and sum
         let mut sum = 0;
-        for bytes in king_recv {
-            let id: u32 = bincode2::deserialize(&bytes).unwrap();
+        for id in king_recv {
             println!("King RECV id {id}");
             sum += id;
         }

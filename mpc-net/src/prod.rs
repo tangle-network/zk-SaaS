@@ -390,6 +390,7 @@ mod test {
     use std::time::Duration;
     use tokio::net::TcpListener;
 
+    use crate::ser_net::MpcSerNet;
     use rcgen::{Certificate, RcgenError};
     use tokio::io::ReadBuf;
 
@@ -521,11 +522,11 @@ mod test {
         let sums = testnet
             .simulate_network_round(move |net| async move {
                 let my_id = net.party_id();
-                let bytes = bincode2::serialize(&my_id).unwrap();
                 if let Some(king_recv) = net
-                    .client_send_or_king_receive(
-                        &bytes,
+                    .client_send_or_king_receive_serialized::<u32>(
+                        &my_id,
                         MultiplexedStreamID::Zero,
+                        0,
                     )
                     .await
                     .unwrap()
@@ -533,8 +534,7 @@ mod test {
                     assert_eq!(my_id, 0);
                     // convert each bytes into a u32, and sum
                     let mut sum = 0;
-                    for bytes in king_recv {
-                        let id: u32 = bincode2::deserialize(&bytes).unwrap();
+                    for id in king_recv {
                         println!("King recv ID: {}", id);
                         sum += id;
                     }

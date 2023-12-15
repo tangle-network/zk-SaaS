@@ -2,7 +2,7 @@ use ark_ff::{FftField, PrimeField};
 use mpc_net::{MpcNetError, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
 
-use crate::channel::MpcSerNet;
+use mpc_net::ser_net::MpcSerNet;
 
 use super::pack::transpose;
 
@@ -13,7 +13,9 @@ pub async fn deg_red<F: FftField + PrimeField, Net: MpcSerNet>(
     net: &Net,
     sid: MultiplexedStreamID,
 ) -> Result<Vec<F>, MpcNetError> {
-    let received_shares = net.send_to_king(&px, sid).await?;
+    let received_shares = net
+        .client_send_or_king_receive_serialized(&px, sid, pp.t)
+        .await?;
     let king_answer: Option<Vec<Vec<F>>> =
         received_shares.map(|px_shares: Vec<Vec<F>>| {
             let mut px_shares = transpose(px_shares);
@@ -24,5 +26,6 @@ pub async fn deg_red<F: FftField + PrimeField, Net: MpcSerNet>(
             transpose(px_shares)
         });
 
-    net.recv_from_king(king_answer, sid).await
+    net.client_receive_or_king_send_serialized(king_answer, sid)
+        .await
 }

@@ -1,11 +1,9 @@
-use crate::{
-    channel::MpcSerNet,
-    utils::pack::{pack_vec, transpose},
-};
+use crate::utils::pack::{pack_vec, transpose};
 use ark_ff::{FftField, PrimeField};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_std::log2;
 use log::debug;
+use mpc_net::ser_net::MpcSerNet;
 use mpc_net::{MpcNetError, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
 use std::mem;
@@ -180,7 +178,9 @@ async fn fft2_with_rearrange<F: FftField + PrimeField, Net: MpcSerNet>(
 
     let mbyl = px.len();
 
-    let received_shares = net.send_to_king(&px, sid).await?;
+    let received_shares = net
+        .client_send_or_king_receive_serialized(&px, sid, pp.t)
+        .await?;
 
     let king_answer = received_shares.map(|all_shares| {
         let all_shares = transpose(all_shares);
@@ -226,7 +226,9 @@ async fn fft2_with_rearrange<F: FftField + PrimeField, Net: MpcSerNet>(
 
     drop(px);
 
-    let got_from_king = net.recv_from_king(king_answer, sid).await?;
+    let got_from_king = net
+        .client_receive_or_king_send_serialized(king_answer, sid)
+        .await?;
 
     Ok(got_from_king)
 }

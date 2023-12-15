@@ -1,6 +1,6 @@
-use crate::channel::MpcSerNet;
 use ark_ec::{CurveGroup, Group};
 use ark_poly::EvaluationDomain;
+use mpc_net::ser_net::MpcSerNet;
 use mpc_net::{MpcNetError, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
 
@@ -87,7 +87,7 @@ pub async fn d_msm<G: CurveGroup, Net: MpcSerNet>(
 
     let n_parties = net.n_parties();
     let king_answer: Option<Vec<G>> = net
-        .send_to_king(&c_share, sid)
+        .client_send_or_king_receive_serialized(&c_share, sid, pp.t)
         .await?
         .map(|shares: Vec<G>| {
             // TODO: Mask with random values.
@@ -95,7 +95,8 @@ pub async fn d_msm<G: CurveGroup, Net: MpcSerNet>(
             vec![output; n_parties]
         });
 
-    net.recv_from_king(king_answer, sid).await
+    net.client_receive_or_king_send_serialized(king_answer, sid)
+        .await
 }
 
 #[cfg(test)]

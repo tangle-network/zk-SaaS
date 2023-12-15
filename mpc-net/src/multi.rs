@@ -7,6 +7,7 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
+use crate::ser_net::MpcSerNet;
 use crate::{MpcNetError, MultiplexedStreamID};
 use async_smux::{MuxBuilder, MuxStream};
 use async_trait::async_trait;
@@ -58,7 +59,7 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> Clone for Peer<IO> {
 }
 
 pub type WrappedMuxStream<T> = Framed<MuxStream<T>, LengthDelimitedCodec>;
-pub const MULTIPLEXED_STREAMS: usize = 3;
+pub const MULTIPLEXED_STREAMS: usize = MultiplexedStreamID::channel_count();
 
 /// Should be called immediately after making a connection to a peer.
 pub async fn multiplex_stream<
@@ -196,13 +197,17 @@ impl MpcNetConnection<TcpStream> {
 
         // Do a round with the king, to be sure everyone is ready
         let from_all = self
-            .client_send_or_king_receive(
-                &[self.id as u8] as &[u8],
+            .client_send_or_king_receive_serialized::<u32>(
+                &self.id,
                 genesis_round_channel,
+                0,
             )
             .await?;
-        self.client_receive_or_king_send(from_all, genesis_round_channel)
-            .await?;
+        self.client_receive_or_king_send_serialized(
+            from_all,
+            genesis_round_channel,
+        )
+        .await?;
 
         for peer in &self.peers {
             if peer.0 == &self.id {
