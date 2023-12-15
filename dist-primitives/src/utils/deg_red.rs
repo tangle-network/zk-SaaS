@@ -5,7 +5,7 @@ use ark_std::UniformRand;
 use mpc_net::{MpcNetError, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
 
-use crate::channel::MpcSerNet;
+use mpc_net::ser_net::MpcSerNet;
 
 use super::pack::transpose;
 
@@ -20,7 +20,9 @@ pub async fn deg_red<
     net: &Net,
     sid: MultiplexedStreamID,
 ) -> Result<Vec<T>, MpcNetError> {
-    let received_shares = net.send_to_king(&x_share, sid).await?;
+    let received_shares = net
+        .client_send_or_king_receive_serialized(&x_share, sid, pp.t)
+        .await?;
     let king_answer: Option<Vec<Vec<T>>> =
         received_shares.map(|x_shares: Vec<Vec<T>>| {
             let mut x_shares = transpose(x_shares);
@@ -32,7 +34,8 @@ pub async fn deg_red<
             transpose(x_shares)
         });
 
-    net.recv_from_king(king_answer, sid).await
+    net.client_receive_or_king_send_serialized(king_answer, sid)
+        .await
 }
 
 #[cfg(test)]

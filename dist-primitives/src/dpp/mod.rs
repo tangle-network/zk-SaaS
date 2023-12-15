@@ -1,14 +1,12 @@
 // Evalauting a distributed version of partial products
 // Given x1, x2, .., xn, output x1, x1*x2, x1*x2*x3, .., x1*x2*..*xn
 
-use crate::{
-    channel::MpcSerNet,
-    utils::{
-        deg_red::deg_red,
-        pack::{pack_vec, transpose},
-    },
+use crate::utils::{
+    deg_red::deg_red,
+    pack::{pack_vec, transpose},
 };
 use ark_ff::{FftField, Field, PrimeField};
+use mpc_net::ser_net::MpcSerNet;
 use mpc_net::{MpcNetError, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
 
@@ -34,7 +32,9 @@ pub async fn d_pp<F: FftField + PrimeField + Field, Net: MpcSerNet>(
 
     // Along with degree reduction
     // King recovers secrets, computes partial products and repacks
-    let received_shares = net.send_to_king(&numden_rand, sid).await?;
+    let received_shares = net
+        .client_send_or_king_receive_serialized(&numden_rand, sid, pp.t)
+        .await?;
 
     let king_answer: Option<Vec<Vec<F>>> =
         received_shares.map(|numden_shares: Vec<Vec<F>>| {
@@ -78,7 +78,9 @@ pub async fn d_pp<F: FftField + PrimeField + Field, Net: MpcSerNet>(
             transpose(pp_numden_shares)
         });
 
-    let mut pp_numden_rand = net.recv_from_king(king_answer, sid).await?;
+    let mut pp_numden_rand = net
+        .client_receive_or_king_send_serialized(king_answer, sid)
+        .await?;
 
     // Finally, remove the ranomness in the partial products
     // multiply all entries of pp_pxss by of s
