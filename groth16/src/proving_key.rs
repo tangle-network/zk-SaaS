@@ -4,7 +4,6 @@ use ark_ec::{pairing::Pairing, AffineRepr};
 use ark_ff::{FftField, PrimeField};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::{cfg_chunks, cfg_into_iter};
-use dist_primitives::dmsm::packexp_from_public;
 use secret_sharing::pss::PackedSharingParams;
 
 use ark_ff::UniformRand;
@@ -34,17 +33,10 @@ where
     /// Each party will hold one share per PSS chunk.
     pub fn pack_from_arkworks_proving_key(
         pk: &ark_groth16::ProvingKey<E>,
-        pp_g1: PackedSharingParams<
+        pp: PackedSharingParams<
             <<E as Pairing>::G1Affine as AffineRepr>::ScalarField,
         >,
-        pp_g2: PackedSharingParams<
-            <<E as Pairing>::G2Affine as AffineRepr>::ScalarField,
-        >,
     ) -> Vec<Self> {
-        assert!(pp_g1.l == pp_g2.l);
-        assert!(pp_g1.n == pp_g2.n);
-        let n = pp_g1.n;
-
         let pre_packed_s = cfg_into_iter!(pk.a_query.clone())
             .skip(1)
             .map(Into::into)
@@ -64,23 +56,25 @@ where
             .map(Into::into)
             .collect::<Vec<_>>();
 
-        let packed_s = cfg_chunks!(pre_packed_s, pp_g1.l)
-            .map(|chunk| packexp_from_public::<E::G1>(chunk, &pp_g1))
+        let rng = &mut ark_std::test_rng();
+
+        let packed_s = cfg_chunks!(pre_packed_s, pp.l)
+            .map(|chunk| pp.pack::<E::G1>(chunk.to_vec(), rng))
             .collect::<Vec<_>>();
-        let packed_u = cfg_chunks!(pre_packed_u, pp_g1.l)
-            .map(|chunk| packexp_from_public::<E::G1>(chunk, &pp_g1))
+        let packed_u = cfg_chunks!(pre_packed_u, pp.l)
+            .map(|chunk| pp.pack::<E::G1>(chunk.to_vec(), rng))
             .collect::<Vec<_>>();
-        let packed_w = cfg_chunks!(pre_packed_w, pp_g1.l)
-            .map(|chunk| packexp_from_public::<E::G1>(chunk, &pp_g1))
+        let packed_w = cfg_chunks!(pre_packed_w, pp.l)
+            .map(|chunk| pp.pack::<E::G1>(chunk.to_vec(), rng))
             .collect::<Vec<_>>();
-        let packed_h = cfg_chunks!(pre_packed_h, pp_g1.l)
-            .map(|chunk| packexp_from_public::<E::G1>(chunk, &pp_g1))
+        let packed_h = cfg_chunks!(pre_packed_h, pp.l)
+            .map(|chunk| pp.pack::<E::G1>(chunk.to_vec(), rng))
             .collect::<Vec<_>>();
-        let packed_v = cfg_chunks!(pre_packed_v, pp_g2.l)
-            .map(|chunk| packexp_from_public::<E::G2>(chunk, &pp_g2))
+        let packed_v = cfg_chunks!(pre_packed_v, pp.l)
+            .map(|chunk| pp.pack::<E::G2>(chunk.to_vec(), rng))
             .collect::<Vec<_>>();
 
-        cfg_into_iter!(0..n)
+        cfg_into_iter!(0..pp.n)
             .map(|i| {
                 let s_shares = cfg_into_iter!(0..packed_s.len())
                     .map(|j| packed_s[j][i].into())
@@ -186,11 +180,10 @@ mod tests {
                 circom, rng,
             )
             .unwrap();
-        let pp_g1 = PackedSharingParams::new(L);
-        let pp_g2 = PackedSharingParams::new(L);
+        let pp = PackedSharingParams::new(L);
         let _shares =
             PackedProvingKeyShare::<Bn254>::pack_from_arkworks_proving_key(
-                &pk, pp_g1, pp_g2,
+                &pk, pp,
             );
     }
 }

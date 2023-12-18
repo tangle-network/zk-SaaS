@@ -177,7 +177,7 @@ async fn fft2_with_rearrange<F: FftField + PrimeField, Net: MpcSerNet>(
     sid: MultiplexedStreamID,
 ) -> Result<Vec<F>, MpcNetError> {
     // King applies FFT2 with rearrange
-
+    let rng = &mut ark_std::test_rng();
     let mbyl = px.len();
 
     let received_shares = net.send_to_king(&px, sid).await?;
@@ -209,12 +209,13 @@ async fn fft2_with_rearrange<F: FftField + PrimeField, Net: MpcSerNet>(
             for i in 0..s1.len() / pp.l {
                 out_shares.push(
                     // This will cause issues with memory benchmarking since it assumes everyone creates this instead of receiving it from dealer
-                    pp.pack_from_public(
+                    pp.pack(
                         s1.iter()
                             .skip(i)
                             .step_by(s1.len() / pp.l)
                             .cloned()
                             .collect::<Vec<_>>(),
+                        rng,
                     ),
                 );
             }
@@ -264,44 +265,30 @@ mod tests {
         let pp = PackedSharingParams::<F>::new(L);
         let constraint = Radix2EvaluationDomain::<F>::new(M).unwrap();
         let network = LocalTestNet::new_local_testnet(pp.n).await.unwrap();
-        let mut x = (0..M).map(|_| F::rand(rng)).collect::<Vec<_>>();
-        eprint!("x = [");
-        (0..M).for_each(|i| {
-            eprint!("{}", x[i]);
-            if i != M - 1 {
-                eprint!(", ");
-            }
-        });
-        eprintln!("]");
+        let mut poly_evals = (0..M).map(|_| F::rand(rng)).collect::<Vec<_>>();
+        let poly_coeffs = constraint.ifft(&poly_evals);
 
-        eprintln!("Computed x evals done ...");
-        eprintln!("Computing actual x evals by using ifft ...");
-        let actual_x_evals = constraint.ifft(&x);
-        eprintln!("Actual x coeff done ...");
-
-        fft_in_place_rearrange(&mut x);
-        let mut pevals: Vec<Vec<F>> = Vec::new();
+        fft_in_place_rearrange(&mut poly_evals);
+        let mut pack_evals: Vec<Vec<F>> = Vec::new();
         for i in 0..M / pp.l {
-            pevals.push(
-                x.iter()
-                    .skip(i)
-                    .step_by(M / pp.l)
-                    .cloned()
-                    .collect::<Vec<_>>(),
-            );
-            pp.pack_from_public_in_place(&mut pevals[i]);
+            let secrets = poly_evals
+                .iter()
+                .skip(i)
+                .step_by(M / pp.l)
+                .cloned()
+                .collect::<Vec<_>>();
+            pack_evals.push(pp.pack(secrets, rng));
         }
 
-        eprintln!("Running d_ifft ...");
         let result = network
             .simulate_network_round(
-                (pevals, pp, constraint),
-                |net, (pcoeff, pp, constraint)| async move {
+                (pack_evals, pp, constraint),
+                |net, (pack_evals, pp, constraint)| async move {
                     let idx = net.party_id() as usize;
-                    let peval_share =
-                        pcoeff.iter().map(|x| x[idx]).collect::<Vec<_>>();
+                    let pack_eval =
+                        pack_evals.iter().map(|x| x[idx]).collect::<Vec<_>>();
                     d_ifft(
-                        peval_share,
+                        pack_eval,
                         false,
                         &constraint,
                         F::one(),
@@ -314,37 +301,13 @@ mod tests {
                 },
             )
             .await;
-        eprintln!("d_ifft done ...");
-        eprintln!("Computing x evals from the shares ...");
-        let computed_x_evals = transpose(result)
+
+        let computed_poly_coeffs = transpose(result)
             .into_iter()
             .flat_map(|x| pp.unpack(x))
             .collect::<Vec<_>>();
 
-        eprintln!("Comparing the computed x eval with actual x eval ...");
-        eprintln!("```");
-        for i in 0..M {
-            eprintln!("ACTL: {}", actual_x_evals[i]);
-            eprintln!("COMP: {}", computed_x_evals[i]);
-            if actual_x_evals[i] == computed_x_evals[i] {
-                eprintln!("..{i}th element Matched ✅");
-            } else {
-                eprintln!("..{i}th element Mismatched ❌");
-                // search for the element in actual_x_coeff
-                let found = computed_x_evals
-                    .iter()
-                    .position(|&x| x == actual_x_evals[i]);
-                match found {
-                    Some(i) => eprintln!(
-                        "....However, it has been found at index: {i} ⚠️"
-                    ),
-                    None => eprintln!("....and Not found at all 🤔"),
-                }
-            }
-        }
-        eprintln!("```");
-
-        assert_eq!(actual_x_evals, computed_x_evals);
+        assert_eq!(poly_coeffs, computed_poly_coeffs);
     }
 
     #[tokio::test]
@@ -353,40 +316,31 @@ mod tests {
         let pp = PackedSharingParams::<F>::new(L);
         let constraint = Radix2EvaluationDomain::<F>::new(M).unwrap();
         let network = LocalTestNet::new_local_testnet(pp.n).await.unwrap();
-        let mut x = (0..M).map(|_| F::rand(rng)).collect::<Vec<_>>();
-        let actual_x_coeff = constraint.fft(&x);
-        eprint!("x = [");
-        (0..M).for_each(|i| {
-            eprint!("{}", x[i]);
-            if i != M - 1 {
-                eprint!(", ");
-            }
-        });
-        eprintln!("]");
+        let mut poly_coeffs = (0..M).map(|_| F::rand(rng)).collect::<Vec<_>>();
+        let poly_evals = constraint.fft(&poly_coeffs);
 
-        fft_in_place_rearrange(&mut x);
+        fft_in_place_rearrange(&mut poly_coeffs);
 
-        let mut pcoeff: Vec<Vec<F>> = Vec::new();
+        let mut pack_coeffs: Vec<Vec<F>> = Vec::new();
         for i in 0..M / pp.l {
-            pcoeff.push(
-                x.iter()
-                    .skip(i)
-                    .step_by(M / pp.l)
-                    .cloned()
-                    .collect::<Vec<_>>(),
-            );
-            pp.pack_from_public_in_place(&mut pcoeff[i]);
+            let secrets = poly_coeffs
+                .iter()
+                .skip(i)
+                .step_by(M / pp.l)
+                .cloned()
+                .collect::<Vec<_>>();
+            pack_coeffs.push(pp.pack(secrets, rng));
         }
-        eprintln!("Running d_fft ...");
+
         let result = network
             .simulate_network_round(
-                (pcoeff, pp, constraint),
-                |net, (pcoeff, pp, constraint)| async move {
+                (pack_coeffs, pp, constraint),
+                |net, (pack_coeffs, pp, constraint)| async move {
                     let idx = net.party_id() as usize;
-                    let pcoeff_share =
-                        pcoeff.iter().map(|x| x[idx]).collect::<Vec<_>>();
+                    let pack_coeff =
+                        pack_coeffs.iter().map(|x| x[idx]).collect::<Vec<_>>();
                     d_fft(
-                        pcoeff_share,
+                        pack_coeff,
                         false,
                         &constraint,
                         &pp,
@@ -399,34 +353,12 @@ mod tests {
             )
             .await;
 
-        let computed_x_coeff = transpose(result)
+        let computed_poly_evals = transpose(result)
             .into_iter()
             .flat_map(|x| pp.unpack(x))
             .collect::<Vec<_>>();
 
-        eprintln!("Comparing the computed x coeff with actual x coeff ...");
-        eprintln!("```");
-        for i in 0..M {
-            eprintln!("ACTL: {}", actual_x_coeff[i]);
-            eprintln!("COMP: {}", computed_x_coeff[i]);
-            if actual_x_coeff[i] == computed_x_coeff[i] {
-                eprintln!("..{i}th element Matched ✅");
-            } else {
-                eprintln!("..{i}th element Mismatched ❌");
-                // search for the element in actual_x_coeff
-                let found = computed_x_coeff
-                    .iter()
-                    .position(|&x| x == actual_x_coeff[i]);
-                match found {
-                    Some(i) => eprintln!(
-                        "....However, it has been found at index: {i} ⚠️"
-                    ),
-                    None => eprintln!("....and Not found at all 🤔"),
-                }
-            }
-        }
-        eprintln!("```");
-        assert_eq!(actual_x_coeff, computed_x_coeff);
+        assert_eq!(poly_evals, computed_poly_evals);
     }
 
     #[tokio::test]
@@ -435,40 +367,30 @@ mod tests {
         let pp = PackedSharingParams::<F>::new(L);
         let constraint = Radix2EvaluationDomain::<F>::new(M).unwrap();
         let network = LocalTestNet::new_local_testnet(pp.n).await.unwrap();
-        let mut x = (0..M).map(|_| F::rand(rng)).collect::<Vec<_>>();
-        let expected_x = x.clone();
-        eprint!("x = [");
-        (0..M).for_each(|i| {
-            eprint!("{}", x[i]);
-            if i != M - 1 {
-                eprint!(", ");
-            }
-        });
-        eprintln!("]");
+        let mut poly_evals = (0..M).map(|_| F::rand(rng)).collect::<Vec<_>>();
+        let expected_evals = poly_evals.clone();
 
-        fft_in_place_rearrange(&mut x);
-        let mut pevals: Vec<Vec<F>> = Vec::new();
+        fft_in_place_rearrange(&mut poly_evals);
+        let mut pack_evals: Vec<Vec<F>> = Vec::new();
         for i in 0..M / pp.l {
-            pevals.push(
-                x.iter()
-                    .skip(i)
-                    .step_by(M / pp.l)
-                    .cloned()
-                    .collect::<Vec<_>>(),
-            );
-            pp.pack_from_public_in_place(&mut pevals[i]);
+            let secrets = poly_evals
+                .iter()
+                .skip(i)
+                .step_by(M / pp.l)
+                .cloned()
+                .collect::<Vec<_>>();
+            pack_evals.push(pp.pack(secrets, rng));
         }
 
-        eprintln!("Running d_ifftxd_ifft ...");
         let result = network
             .simulate_network_round(
-                (pevals, pp, constraint),
-                |net, (pcoeff, pp, constraint)| async move {
+                (pack_evals, pp, constraint),
+                |net, (pack_evals, pp, constraint)| async move {
                     let idx = net.party_id() as usize;
-                    let peval_share =
-                        pcoeff.iter().map(|x| x[idx]).collect::<Vec<_>>();
+                    let pack_eval =
+                        pack_evals.iter().map(|x| x[idx]).collect::<Vec<_>>();
                     let p_coeff = d_ifft(
-                        peval_share,
+                        pack_eval,
                         true,
                         &constraint,
                         F::one(),
@@ -491,35 +413,13 @@ mod tests {
                 },
             )
             .await;
-        eprintln!("d_ifftxd_fft done ...");
-        eprintln!("Computing x evals from the shares ...");
-        let computed_x = transpose(result)
+
+        let computed_poly_evals = transpose(result)
             .into_iter()
             .flat_map(|x| pp.unpack(x))
             .collect::<Vec<_>>();
 
-        eprintln!("Comparing the computed x eval with actual x eval ...");
-        eprintln!("```");
-        for i in 0..M {
-            eprintln!("ACTL: {}", expected_x[i]);
-            eprintln!("COMP: {}", computed_x[i]);
-            if expected_x[i] == computed_x[i] {
-                eprintln!("..{i}th element Matched ✅");
-            } else {
-                eprintln!("..{i}th element Mismatched ❌");
-                // search for the element in actual_x_coeff
-                let found = computed_x.iter().position(|&x| x == expected_x[i]);
-                match found {
-                    Some(i) => eprintln!(
-                        "....However, it has been found at index: {i} ⚠️"
-                    ),
-                    None => eprintln!("....and Not found at all 🤔"),
-                }
-            }
-        }
-        eprintln!("```");
-
-        assert_eq!(expected_x, computed_x);
+        assert_eq!(expected_evals, computed_poly_evals);
     }
 
     #[tokio::test]
@@ -529,30 +429,29 @@ mod tests {
         let constraint = Radix2EvaluationDomain::<F>::new(M).unwrap();
         let constraint_coset = constraint.get_coset(F::GENERATOR).unwrap();
         let network = LocalTestNet::new_local_testnet(pp.n).await.unwrap();
-        let mut x = (0..M).map(|_| F::rand(rng)).collect::<Vec<_>>();
-        let expected_x = x.clone();
+        let mut poly_evals = (0..M).map(|_| F::rand(rng)).collect::<Vec<_>>();
+        let expected_poly_evals = poly_evals.clone();
 
-        fft_in_place_rearrange(&mut x);
-        let mut pevals: Vec<Vec<F>> = Vec::new();
+        fft_in_place_rearrange(&mut poly_evals);
+        let mut pack_evals: Vec<Vec<F>> = Vec::new();
         for i in 0..M / pp.l {
-            pevals.push(
-                x.iter()
-                    .skip(i)
-                    .step_by(M / pp.l)
-                    .cloned()
-                    .collect::<Vec<_>>(),
-            );
-            pp.pack_from_public_in_place(&mut pevals[i]);
+            let secrets = poly_evals
+                .iter()
+                .skip(i)
+                .step_by(M / pp.l)
+                .cloned()
+                .collect::<Vec<_>>();
+            pack_evals.push(pp.pack(secrets, rng));
         }
 
         eprintln!("Running coset_d_ifftxd_ifft ...");
         let result = network
             .simulate_network_round(
-                (pevals, pp, constraint, constraint_coset),
-                |net, (pcoeff, pp, constraint, constraint_coset)| async move {
+                (pack_evals, pp, constraint, constraint_coset),
+                |net, (pack_evals, pp, constraint, constraint_coset)| async move {
                     let idx = net.party_id() as usize;
                     let peval_share =
-                        pcoeff.iter().map(|x| x[idx]).collect::<Vec<_>>();
+                        pack_evals.iter().map(|x| x[idx]).collect::<Vec<_>>();
                     // starting with evals over dom
                     let p_coeff = d_ifft(
                         peval_share,
@@ -603,11 +502,11 @@ mod tests {
             .await;
         eprintln!("coset_d_ifftxd_fft done ...");
         eprintln!("Computing x evals from the shares ...");
-        let computed_x = transpose(result)
+        let computed_poly_evals = transpose(result)
             .into_iter()
             .flat_map(|x| pp.unpack(x))
             .collect::<Vec<_>>();
 
-        assert_eq!(expected_x, computed_x);
+        assert_eq!(expected_poly_evals, computed_poly_evals);
     }
 }
