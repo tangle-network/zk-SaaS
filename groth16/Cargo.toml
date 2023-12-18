@@ -13,7 +13,7 @@ ark-ec = {version = "0.4.0", default-features = false}
 ark-relations = { version = "0.4.0", default-features = false }
 ark-serialize = { version = "0.4.0", default-features = false, features = [ "derive" ] }
 ark-groth16 = { version = "0.4.0", default-features = false }
-ark-circom = { git = "https://github.com/arkworks-rs/circom-compat.git" }
+ark-circom = { git = "https://github.com/webb-tools/ark-circom.git" }
 
 # ARK curves
 ark-bls12-377 = {version = "0.4.0", default-features = false, features = ["curve"] }
