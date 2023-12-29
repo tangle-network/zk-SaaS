@@ -24,7 +24,7 @@ pub async fn deg_red<
         .client_send_or_king_receive_serialized(&x_share, sid, pp.t)
         .await?;
     let king_answer: Option<Vec<Vec<T>>> =
-        received_shares.map(|x_shares: Vec<Vec<T>>| {
+        received_shares.shares.map(|x_shares: Vec<Vec<T>>| {
             let mut x_shares = transpose(x_shares);
 
             for x_share in &mut x_shares {

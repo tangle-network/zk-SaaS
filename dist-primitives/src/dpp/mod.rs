@@ -37,7 +37,7 @@ pub async fn d_pp<F: FftField + PrimeField + Field, Net: MpcSerNet>(
         .await?;
 
     let king_answer: Option<Vec<Vec<F>>> =
-        received_shares.map(|numden_shares: Vec<Vec<F>>| {
+        received_shares.shares.map(|numden_shares: Vec<Vec<F>>| {
             // nx(m/l) -> (m/l)xn
             debug_assert_eq!(
                 numden_shares.len(),

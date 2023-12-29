@@ -1,6 +1,9 @@
-use ark_ff::{FftField, Zero};
-use ark_poly::{DenseUVPolynomial, EvaluationDomain, Polynomial, univariate::{DensePolynomial, DenseOrSparsePolynomial}};
 use crate::pss::PackedSharingParams;
+use ark_ff::{FftField, Zero};
+use ark_poly::{
+    univariate::{DenseOrSparsePolynomial, DensePolynomial},
+    DenseUVPolynomial, EvaluationDomain, Polynomial,
+};
 
 impl<F: FftField> PackedSharingParams<F> {
     // todo: speed up gcd using FFT
@@ -20,7 +23,8 @@ impl<F: FftField> PackedSharingParams<F> {
         // just before termination, `r = a s + b t`.
         let stop = (dimension + codelength) / 2;
         let mut s = DensePolynomial::<F>::from_coefficients_slice(&[F::one()]);
-        let mut prev_s = DensePolynomial::<F>::from_coefficients_slice(&[F::zero()]);
+        let mut prev_s =
+            DensePolynomial::<F>::from_coefficients_slice(&[F::zero()]);
 
         let mut r = b;
         let mut prev_r = a;
@@ -54,18 +58,25 @@ impl<F: FftField> PackedSharingParams<F> {
         // do ifft -- should have "low enough (dimension-1)" degree.
 
         // interpolate the received code
-        let r = DensePolynomial::from_coefficients_slice(&self.share.ifft(&received_code));
-        
+        let r = DensePolynomial::from_coefficients_slice(
+            &self.share.ifft(&received_code),
+        );
+
         // compute gcd between vanishing polynomial and received code
         let z = self.share.vanishing_polynomial();
 
-        let (q1, q0) = self.partial_xgcd(z.clone().into(), r.clone(), codelength, dimension);
+        let (q1, q0) = self.partial_xgcd(
+            z.clone().into(),
+            r.clone(),
+            codelength,
+            dimension,
+        );
         let q1 = DenseOrSparsePolynomial::from(q1);
         let q0 = DenseOrSparsePolynomial::from(q0);
-        
+
         // h should be the message
         let (h, rem) = q1.divide_with_q_and_r(&q0).unwrap();
-        
+
         // todo: add various checks for failed decoding
         assert!(rem.is_zero());
 
@@ -117,11 +128,14 @@ mod tests {
         let m = msg.iter().map(|x| F17::from(*x)).collect::<Vec<_>>();
 
         let pp = super::PackedSharingParams::<F17>::new(2);
-        
+
         let mut code = pp.share.fft(&m);
         code[1] += F17::from(1); //error
 
         let decoded = pp.decode_to_message(code.clone(), 8, 4);
-        assert_eq!(decoded, DensePolynomial::<F17>::from_coefficients_slice(&m));
+        assert_eq!(
+            decoded,
+            DensePolynomial::<F17>::from_coefficients_slice(&m)
+        );
     }
 }

@@ -8,7 +8,7 @@ use std::time::Duration;
 #[derive(Clone)]
 pub struct ReceivedShares<T: Clone> {
     pub shares: Option<Vec<T>>,
-    pub parties: Option<Vec<u32>>
+    pub parties: Option<Vec<u32>>,
 }
 
 #[async_trait]
@@ -50,7 +50,7 @@ pub trait MpcSerNet: MpcNet {
 
                     Ok(ReceivedShares {
                         shares: Some(ret),
-                        parties: Some((0..self.n_parties() as u32).collect())
+                        parties: Some((0..self.n_parties() as u32).collect()),
                     })
                 }
 
@@ -59,9 +59,10 @@ pub trait MpcSerNet: MpcNet {
                     let serialized_results = received_results
                         .into_iter()
                         .filter_map(|(id, bytes)| {
-                            let result = T::deserialize_compressed(&bytes[..]).map_err(|err| {
-                                MpcNetError::Generic(err.to_string())
-                            });
+                            let result = T::deserialize_compressed(&bytes[..])
+                                .map_err(|err| {
+                                    MpcNetError::Generic(err.to_string())
+                                });
                             if result.is_err() {
                                 return None;
                             }
@@ -79,21 +80,27 @@ pub trait MpcSerNet: MpcNet {
                         });
                     }
 
-                    Ok(
-                        ReceivedShares {
-                            shares: Some(serialized_results.iter().map(|(_, share)| share.clone()).collect::<Vec<_>>()),
-                            parties: Some(serialized_results.iter().map(|(party, _)| *party).collect())
-                        }
-                    )
+                    Ok(ReceivedShares {
+                        shares: Some(
+                            serialized_results
+                                .iter()
+                                .map(|(_, share)| share.clone())
+                                .collect::<Vec<_>>(),
+                        ),
+                        parties: Some(
+                            serialized_results
+                                .iter()
+                                .map(|(party, _)| *party)
+                                .collect(),
+                        ),
+                    })
                 }
             }
         } else {
-            Ok(
-                ReceivedShares {
-                    shares: None,
-                    parties: None
-                }
-            )
+            Ok(ReceivedShares {
+                shares: None,
+                parties: None,
+            })
         }
     }
 

@@ -55,7 +55,7 @@ pub async fn d_fft_test<F: FftField + PrimeField, Net: MpcNet>(
         )
         .await
         .unwrap();
-    if let Some(peval_shares) = result {
+    if let Some(peval_shares) = result.shares {
         let peval_shares = transpose(peval_shares);
 
         let pevals: Vec<F> = peval_shares
