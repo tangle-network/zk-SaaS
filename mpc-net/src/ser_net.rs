@@ -7,8 +7,8 @@ use std::time::Duration;
 
 #[derive(Clone)]
 pub struct ReceivedShares<T: Clone> {
-    pub shares: Vec<T>,
-    pub parties: Vec<u32>
+    pub shares: Option<Vec<T>>,
+    pub parties: Option<Vec<u32>>
 }
 
 #[async_trait]
@@ -20,7 +20,7 @@ pub trait MpcSerNet: MpcNet {
         out: &T,
         sid: MultiplexedStreamID,
         threshold: usize,
-    ) -> Result<Option<ReceivedShares<T>>, MpcNetError> {
+    ) -> Result<ReceivedShares<T>, MpcNetError> {
         let mut bytes_out = Vec::new();
         out.serialize_compressed(&mut bytes_out).unwrap();
         let bytes_in = self
@@ -48,10 +48,10 @@ pub trait MpcSerNet: MpcNet {
                         ret.push(result?);
                     }
 
-                    Ok(Some(ReceivedShares {
-                        shares: ret,
-                        parties: (0..self.n_parties() as u32).collect()
-                    }))
+                    Ok(ReceivedShares {
+                        shares: Some(ret),
+                        parties: Some((0..self.n_parties() as u32).collect())
+                    })
                 }
 
                 ClientSendOrKingReceiveResult::Partial(received_results) => {
@@ -80,15 +80,20 @@ pub trait MpcSerNet: MpcNet {
                     }
 
                     Ok(
-                        Some(ReceivedShares {
-                            shares: serialized_results.iter().map(|(_, share)| share.clone()).collect::<Vec<_>>(),
-                            parties: serialized_results.iter().map(|(party, _)| *party).collect()
-                        })
+                        ReceivedShares {
+                            shares: Some(serialized_results.iter().map(|(_, share)| share.clone()).collect::<Vec<_>>()),
+                            parties: Some(serialized_results.iter().map(|(party, _)| *party).collect())
+                        }
                     )
                 }
             }
         } else {
-            Ok(None)
+            Ok(
+                ReceivedShares {
+                    shares: None,
+                    parties: None
+                }
+            )
         }
     }
 

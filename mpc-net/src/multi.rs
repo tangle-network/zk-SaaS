@@ -203,16 +203,9 @@ impl MpcNetConnection<TcpStream> {
                 0,
             )
             .await?;
-        
-        let out;
-        if from_all.is_some() {
-            out = Some(from_all.unwrap().shares);
-        } else {
-            out = None;
-        }
 
         self.client_receive_or_king_send_serialized(
-            out,
+            from_all.shares,
             genesis_round_channel,
         )
         .await?;
