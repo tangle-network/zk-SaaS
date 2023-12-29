@@ -5,16 +5,22 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use async_trait::async_trait;
 use std::time::Duration;
 
+#[derive(Clone)]
+pub struct ReceivedShares<T: Clone> {
+    pub shares: Vec<T>,
+    pub parties: Vec<u32>
+}
+
 #[async_trait]
 pub trait MpcSerNet: MpcNet {
     async fn client_send_or_king_receive_serialized<
-        T: CanonicalDeserialize + CanonicalSerialize,
+        T: Clone + CanonicalDeserialize + CanonicalSerialize,
     >(
         &self,
         out: &T,
         sid: MultiplexedStreamID,
         threshold: usize,
-    ) -> Result<Option<Vec<T>>, MpcNetError> {
+    ) -> Result<Option<ReceivedShares<T>>, MpcNetError> {
         let mut bytes_out = Vec::new();
         out.serialize_compressed(&mut bytes_out).unwrap();
         let bytes_in = self
@@ -42,22 +48,43 @@ pub trait MpcSerNet: MpcNet {
                         ret.push(result?);
                     }
 
-                    Ok(Some(ret))
+                    Ok(Some(ReceivedShares {
+                        shares: ret,
+                        parties: (0..self.n_parties() as u32).collect()
+                    }))
                 }
 
                 ClientSendOrKingReceiveResult::Partial(received_results) => {
-                    if received_results.len() < threshold {
+                    // create a hash map with deserialized results, dropping the ones that return MpcNetError
+                    let serialized_results = received_results
+                        .into_iter()
+                        .filter_map(|(id, bytes)| {
+                            let result = T::deserialize_compressed(&bytes[..]).map_err(|err| {
+                                MpcNetError::Generic(err.to_string())
+                            });
+                            if result.is_err() {
+                                return None;
+                            }
+                            Some((id, result.unwrap()))
+                        })
+                        .collect::<Vec<_>>();
+
+                    if serialized_results.len() < threshold {
                         return Err(MpcNetError::Protocol {
                             err: format!(
                                 "Timeout: only {} responses received",
-                                received_results.len()
+                                serialized_results.len()
                             ),
                             party: 0,
                         });
                     }
 
-                    // TODO: recovery protocol
-                    Ok(None) // TODO: real return value
+                    Ok(
+                        Some(ReceivedShares {
+                            shares: serialized_results.iter().map(|(_, share)| share.clone()).collect::<Vec<_>>(),
+                            parties: serialized_results.iter().map(|(party, _)| *party).collect()
+                        })
+                    )
                 }
             }
         } else {

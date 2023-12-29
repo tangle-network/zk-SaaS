@@ -534,9 +534,9 @@ mod test {
                     assert_eq!(my_id, 0);
                     // convert each bytes into a u32, and sum
                     let mut sum = 0;
-                    for id in king_recv {
-                        println!("King recv ID: {}", id);
-                        sum += id;
+                    for share in king_recv.shares {
+                        println!("King recv ID: {}", share);
+                        sum += share;
                     }
                     // now, send the sum to each of the clients
                     let bytes = bincode2::serialize(&sum).unwrap();

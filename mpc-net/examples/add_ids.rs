@@ -76,7 +76,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         assert_eq!(my_id, 0);
         // convert each bytes into a u32, and sum
         let mut sum = 0;
-        for id in king_recv {
+        for id in king_recv.shares {
             println!("King RECV id {id}");
             sum += id;
         }
