@@ -1,16 +1,15 @@
-use ark_poly::{
-    domain::{DomainCoeff, EvaluationDomain},
-    Radix2EvaluationDomain,
-};
+use ark_poly::{domain::DomainCoeff, EvaluationDomain, Radix2EvaluationDomain};
 
-use ark_ff::FftField;
+use ark_ff::{batch_inversion, FftField};
 use ark_std::{rand::Rng, UniformRand};
+
+use crate::utils::{eval, get_zero_roots, syn_div};
 
 /// Packed Secret Sharing Parameters
 ///
 /// Configures the parameters for packed secret sharing. It assumes that the number of parties is `4l`,
 /// the corrupting threshold is `l-1`, and checks that the number of parties (n) equals to `2(t + l + 1)`.
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct PackedSharingParams<F>
 where
     F: FftField,
@@ -149,6 +148,58 @@ impl<F: FftField> PackedSharingParams<F> {
 
         result
     }
+
+    /// Runs lagrange interpolation to unpack the secrets. Can be used when some shares are missing.
+    /// todo: can be optimized by compting secrets directly instead of first interpolating the polynomial
+    pub fn lagrange_unpack<T: DomainCoeff<F>>(
+        &self,
+        shares: Vec<T>,
+        parties: Vec<u32>,
+    ) -> Vec<T> {
+        // first generate lagrange coefficients for the parties specified
+        // these are the lagrange polynomials corresponding to the share domain, evaluated at the secret domain
+        // code ported from https://github.com/facebook/winterfell/blob/a450b818f7ec70e7d40628c789845a93d6e0c030/math/src/polynom/mod.rs#L626
+        // Note: ordering of polynomial coefficients is largest power -> smaller power
+
+        debug_assert!(
+            shares.len() == parties.len(),
+            "Shares and parties length mismatch"
+        );
+
+        let mut xs = Vec::new();
+        let share_elements = self.share.elements().collect::<Vec<F>>();
+        for i in 0..parties.len() {
+            xs.push(share_elements[parties[i] as usize]);
+        }
+
+        let roots = get_zero_roots(&xs);
+        let numerators: Vec<Vec<F>> =
+            xs.iter().map(|&x| syn_div(&roots, 1, x)).collect();
+        println!("numerators: {}", numerators.len());
+        let mut denominators: Vec<F> =
+            numerators.iter().zip(xs).map(|(f, x)| eval(f, x)).collect();
+        batch_inversion(&mut denominators);
+
+        // result will contain coefficent form of the polynomial
+        let mut result = vec![T::zero(); numerators.len()];
+        for i in 0..shares.len() {
+            let mut y_slice = shares[i];
+            y_slice *= denominators[i];
+            for (j, res) in result.iter_mut().enumerate() {
+                let mut tmp = y_slice;
+                tmp *= numerators[i][j];
+                *res += tmp;
+            }
+        }
+
+        // evaluate on secrets domain
+        self.secret2.fft_in_place(&mut result);
+
+        // drop alternate elements from shares array and only iterate till 2l as the rest of it is randomness
+        result = result[0..2 * self.l].iter().step_by(2).copied().collect();
+
+        result
+    }
 }
 
 // Tests
@@ -185,9 +236,16 @@ mod tests {
         let expected = secrets.clone();
 
         let shares = pp.pack(secrets, rng);
-        let secrets = pp.unpack(shares);
+        let secrets = pp.unpack(shares.clone());
+
+        // using only a subset of shares here
+        let lagrange_secrets = pp.lagrange_unpack(
+            shares[0..pp.n - pp.t].to_vec(),
+            (0..(pp.n - pp.t) as u32).collect(),
+        );
 
         assert_eq!(expected, secrets);
+        assert_eq!(expected, lagrange_secrets);
     }
 
     #[test]
@@ -217,8 +275,15 @@ mod tests {
 
         let shares = pp.pack(secrets, rng);
         let mul_shares: Vec<F> = shares.iter().map(|x| (*x) * (*x)).collect();
-        let mul_secrets = pp.unpack2(mul_shares);
+        let mul_secrets = pp.unpack2(mul_shares.clone());
+
+        // using only a subset of shares here
+        let lagrange_secrets = pp.lagrange_unpack(
+            mul_shares[0..pp.n].to_vec(),
+            (0..(pp.n) as u32).collect(),
+        );
 
         assert_eq!(expected, mul_secrets);
+        assert_eq!(expected, lagrange_secrets);
     }
 }

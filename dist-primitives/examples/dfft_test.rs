@@ -40,7 +40,6 @@ pub async fn d_fft_test<F: FftField + PrimeField, Net: MpcNet>(
         .collect::<Vec<_>>();
 
     // Rearranging x
-
     let peval_share =
         d_fft(pcoeff_share, false, dom, pp, net, MultiplexedStreamID::One)
             .await
