@@ -9,7 +9,7 @@ use crate::utils::{eval, get_zero_roots, syn_div};
 ///
 /// Configures the parameters for packed secret sharing. It assumes that the number of parties is `4l`,
 /// the corrupting threshold is `l-1`, and checks that the number of parties (n) equals to `2(t + l + 1)`.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PackedSharingParams<F>
 where
     F: FftField,
