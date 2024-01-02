@@ -8,7 +8,12 @@ use crate::utils::{eval, get_zero_roots, syn_div};
 /// Packed Secret Sharing Parameters
 ///
 /// Configures the parameters for packed secret sharing. It assumes that the number of parties is `4l`,
-/// the corrupting threshold is `l-1`, and checks that the number of parties (n) equals to `2(t + l + 1)`.
+/// the corrupting threshold is `l`, and checks that the number of parties (n) equals to `2(t + l)`.
+/// Reconstruction of multiplied shares is not possible if >1 party drops out in this configuration
+/// Alternate configurations (t, l, n) - #dropouts tolerated = n - (2(t+l-1) + 1):
+/// 1. (1, 2, 8) - 3 (ROBUST)
+/// 2. (1, 4, 9) - 1 (FAST)
+/// 3. (3, 2, 9) - 1 (PRIVATE)
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PackedSharingParams<F>
 where
@@ -33,22 +38,22 @@ impl<F: FftField> PackedSharingParams<F> {
     #[allow(unused)]
     pub fn new(l: usize) -> Self {
         let n = l * 4;
-        let t = l - 1;
-        debug_assert_eq!(n, 2 * (t + l + 1));
+        let t = l;
+        debug_assert_eq!(n, 2 * (t + l));
 
         let share = Radix2EvaluationDomain::<F>::new(n).unwrap();
-        let secret = Radix2EvaluationDomain::<F>::new(l + t + 1)
+        let secret = Radix2EvaluationDomain::<F>::new(l + t)
             .unwrap()
             .get_coset(F::GENERATOR)
             .unwrap();
-        let secret2 = Radix2EvaluationDomain::<F>::new(2 * (l + t + 1))
+        let secret2 = Radix2EvaluationDomain::<F>::new(2 * (l + t))
             .unwrap()
             .get_coset(F::GENERATOR)
             .unwrap();
 
         debug_assert_eq!(share.size(), n);
-        debug_assert_eq!(secret.size(), l + t + 1);
-        debug_assert_eq!(secret2.size(), 2 * (l + t + 1));
+        debug_assert_eq!(secret.size(), l + t);
+        debug_assert_eq!(secret2.size(), 2 * (l + t));
 
         PackedSharingParams {
             t,
@@ -71,7 +76,7 @@ impl<F: FftField> PackedSharingParams<F> {
         let mut result = secrets;
 
         // Resize the secrets with t+1 zeros
-        result.append(&mut vec![T::zero(); self.t + 1]);
+        result.append(&mut vec![T::zero(); self.t]);
 
         // interpolating on secrets domain
         self.secret.ifft_in_place(&mut result);
@@ -95,7 +100,7 @@ impl<F: FftField> PackedSharingParams<F> {
 
         // Resize the secrets with t+1 random points
         let rand_points =
-            (0..self.t + 1).map(|_| T::rand(rng)).collect::<Vec<T>>();
+            (0..self.t).map(|_| T::rand(rng)).collect::<Vec<T>>();
         result.extend_from_slice(&rand_points);
 
         // interpolating on secrets domain
@@ -135,7 +140,7 @@ impl<F: FftField> PackedSharingParams<F> {
         // assert that all but first 2(t+l)+1 elements are zero
         #[cfg(debug_assertions)]
         {
-            for item in result.iter().skip(2 * (self.l + self.t) + 1) {
+            for item in result.iter().skip(2 * (self.l + self.t) - 1) {
                 debug_assert!(item.is_zero(), "Unpack2 failed");
             }
         }
@@ -153,8 +158,8 @@ impl<F: FftField> PackedSharingParams<F> {
     /// todo: can be optimized by compting secrets directly instead of first interpolating the polynomial
     pub fn lagrange_unpack<T: DomainCoeff<F>>(
         &self,
-        shares: Vec<T>,
-        parties: Vec<u32>,
+        shares: &[T],
+        parties: &[u32],
     ) -> Vec<T> {
         // first generate lagrange coefficients for the parties specified
         // these are the lagrange polynomials corresponding to the share domain, evaluated at the secret domain
@@ -175,7 +180,7 @@ impl<F: FftField> PackedSharingParams<F> {
         let roots = get_zero_roots(&xs);
         let numerators: Vec<Vec<F>> =
             xs.iter().map(|&x| syn_div(&roots, 1, x)).collect();
-        println!("numerators: {}", numerators.len());
+        
         let mut denominators: Vec<F> =
             numerators.iter().zip(xs).map(|(f, x)| eval(f, x)).collect();
         batch_inversion(&mut denominators);
@@ -210,19 +215,19 @@ mod tests {
     use ark_std::UniformRand;
     use PackedSharingParams;
 
-    const L: usize = 4;
+    const L: usize = 2;
     const N: usize = L * 4;
-    const T: usize = N / 2 - L - 1;
+    const T: usize = L;
 
     #[test]
     fn test_initialize() {
         let pp = PackedSharingParams::<F>::new(L);
-        assert_eq!(pp.t, L - 1);
+        assert_eq!(pp.t, L);
         assert_eq!(pp.l, L);
         assert_eq!(pp.n, N);
         assert_eq!(pp.share.size(), N);
-        assert_eq!(pp.secret.size(), L + T + 1);
-        assert_eq!(pp.secret2.size(), 2 * (L + T + 1));
+        assert_eq!(pp.secret.size(), L + T);
+        assert_eq!(pp.secret2.size(), 2 * (L + T));
     }
 
     #[test]
@@ -240,8 +245,8 @@ mod tests {
 
         // using only a subset of shares here
         let lagrange_secrets = pp.lagrange_unpack(
-            shares[0..pp.n - pp.t].to_vec(),
-            (0..(pp.n - pp.t) as u32).collect(),
+            &shares[0..pp.n - pp.t + 1],
+            &(0..(pp.n - pp.t + 1) as u32).collect::<Vec::<u32>>().as_slice(),
         );
 
         assert_eq!(expected, secrets);
@@ -277,10 +282,10 @@ mod tests {
         let mul_shares: Vec<F> = shares.iter().map(|x| (*x) * (*x)).collect();
         let mul_secrets = pp.unpack2(mul_shares.clone());
 
-        // using only a subset of shares here
+        // can tolerate 1 party dropping out
         let lagrange_secrets = pp.lagrange_unpack(
-            mul_shares[0..pp.n].to_vec(),
-            (0..(pp.n) as u32).collect(),
+            &mul_shares[0..pp.n-1].to_vec(),
+            &(0..(pp.n-1) as u32).collect::<Vec::<u32>>().as_slice(),
         );
 
         assert_eq!(expected, mul_secrets);
