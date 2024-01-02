@@ -37,14 +37,14 @@ pub async fn d_pp<F: FftField + PrimeField + Field, Net: MpcSerNet>(
         .await?;
 
     let king_answer: Option<Vec<Vec<F>>> =
-        received_shares.shares.map(|numden_shares: Vec<Vec<F>>| {
+        received_shares.map(|rs| {
             // nx(m/l) -> (m/l)xn
             debug_assert_eq!(
-                numden_shares.len(),
+                rs.shares.len(),
                 pp.n,
                 "Mismatch of size in d_pp"
             );
-            let numden_shares = transpose(numden_shares);
+            let numden_shares = transpose(rs.shares);
 
             // Unpack the secrets
             // (m/l)xn -> m

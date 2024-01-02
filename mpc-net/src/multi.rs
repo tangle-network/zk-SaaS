@@ -7,7 +7,7 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::ser_net::MpcSerNet;
+use crate::ser_net::{MpcSerNet, ReceivedShares};
 use crate::{MpcNetError, MultiplexedStreamID};
 use async_smux::{MuxBuilder, MuxStream};
 use async_trait::async_trait;
@@ -329,7 +329,7 @@ impl LocalTestNet {
 
     pub async fn simulate_lossy_network_round<
         F: Future<Output = K> + Send,
-        K: Send + Sync + 'static,
+        K: Clone + Send + Sync + 'static,
         U: Clone + Send + Sync + 'static,
     >(
         self,
@@ -339,10 +339,11 @@ impl LocalTestNet {
             + Sync
             + Clone
             + 'static,
-    ) -> Vec<K> {
+    ) -> ReceivedShares<K> {
         let mut futures = FuturesOrdered::new();
         let mut sorted_nodes = self.nodes.into_iter().collect::<Vec<_>>();
         sorted_nodes.sort_by(|a, b| a.0.cmp(&b.0));
+        let n_parties = sorted_nodes.len();
         for (_, connections) in sorted_nodes {
             let next_f = f.clone();
             let next_user_data = user_data.clone();
@@ -353,9 +354,12 @@ impl LocalTestNet {
                 handle.await.unwrap()
             }));
         }
-        let result = futures.collect().await;
+        let result: Vec<K> = futures.collect().await;
 
-        result
+        ReceivedShares{
+            shares: result[0..n_parties-1].to_vec(),
+            parties: (0..(n_parties-1) as u32).collect(),
+        }
     }
 
     /// Get the connection for a given party ID

@@ -25,10 +25,9 @@ pub async fn d_msm<G: CurveGroup, Net: MpcSerNet>(
     let king_answer: Option<Vec<G>> = net
         .client_send_or_king_receive_serialized(&c_share, sid, pp.t)
         .await?
-        .shares
-        .map(|shares: Vec<G>| {
+        .map(|rs| {
             // TODO: Mask with random values.
-            let output: G = pp.unpack2(shares).iter().sum();
+            let output: G = pp.unpack2(rs.shares).iter().sum();
             vec![output; n_parties]
         });
 

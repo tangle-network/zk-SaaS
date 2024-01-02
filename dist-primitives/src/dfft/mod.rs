@@ -182,8 +182,8 @@ async fn fft2_with_rearrange<F: FftField + PrimeField, Net: MpcSerNet>(
         .client_send_or_king_receive_serialized(&px, sid, pp.t)
         .await?;
 
-    let king_answer = received_shares.shares.map(|all_shares| {
-        let all_shares = transpose(all_shares);
+    let king_answer = received_shares.map(|rs| {
+        let all_shares = transpose(rs.shares);
         let mut s1: Vec<F> = vec![F::zero(); px.len() * pp.l];
 
         for (i, share) in (0..mbyl).zip(all_shares) {

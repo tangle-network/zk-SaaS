@@ -46,9 +46,8 @@ pub async fn d_pp_test<F: FftField + PrimeField, Net: MpcNet>(
     )
     .await
     .unwrap()
-    .shares
-    .map(|pp_px_shares| {
-        let pp_px_shares = transpose(pp_px_shares);
+    .map(|rs| {
+        let pp_px_shares = transpose(rs.shares);
 
         let pp_px: Vec<F> = pp_px_shares
             .into_iter()

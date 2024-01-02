@@ -24,8 +24,8 @@ pub async fn deg_red<
         .client_send_or_king_receive_serialized(&x_share, sid, pp.t)
         .await?;
     let king_answer: Option<Vec<Vec<T>>> =
-        received_shares.shares.map(|x_shares: Vec<Vec<T>>| {
-            let mut x_shares = transpose(x_shares);
+        received_shares.map(|rs| {
+            let mut x_shares = transpose(rs.shares);
 
             for x_share in &mut x_shares {
                 let xi: Vec<T> = pp.unpack2(x_share.clone());
@@ -43,6 +43,7 @@ mod tests {
     use ark_bls12_377::Fr as F;
     use ark_std::UniformRand;
     use mpc_net::MpcNet;
+    use mpc_net::ser_net::ReceivedShares;
     use mpc_net::{LocalTestNet, MultiplexedStreamID};
     use secret_sharing::pss::PackedSharingParams;
 
@@ -60,8 +61,8 @@ mod tests {
 
         let shares = pp.pack(secrets, rng);
         let mul_shares: Vec<F> = shares.iter().map(|x| (*x) * (*x)).collect();
-        let red_shares = network
-            .simulate_network_round(
+        let rs: ReceivedShares<Vec<F>> = network
+            .simulate_lossy_network_round(
                 (mul_shares, pp),
                 |net, (mul_shares, pp)| async move {
                     let idx = net.party_id() as usize;
@@ -78,11 +79,18 @@ mod tests {
                 },
             )
             .await;
-
-        let computed = transpose(red_shares)
-            .into_iter()
+        
+        let shares = transpose(rs.shares);
+        let computed = if rs.parties.len() == pp.n {
+            shares.into_iter()
             .flat_map(|x| pp.unpack(x))
-            .collect::<Vec<_>>();
+            .collect::<Vec<_>>()
+        } else {
+            println!("Using lagrange unpack");
+            shares.into_iter()
+            .flat_map(|x| pp.lagrange_unpack(&x, &rs.parties))
+            .collect::<Vec<_>>()
+        };
 
         assert_eq!(computed, expected);
     }
