@@ -204,11 +204,19 @@ impl MpcNetConnection<TcpStream> {
             )
             .await?;
 
-        self.client_receive_or_king_send_serialized(
-            from_all.shares,
-            genesis_round_channel,
-        )
-        .await?;
+        if from_all.is_some() {
+            self.client_receive_or_king_send_serialized(
+                Some(from_all.unwrap().shares),
+                genesis_round_channel,
+            )
+            .await?;
+        } else {
+            self.client_receive_or_king_send_serialized(
+                None,
+                genesis_round_channel,
+            )
+            .await?;
+        }
 
         for peer in &self.peers {
             if peer.0 == &self.id {
@@ -317,6 +325,37 @@ impl LocalTestNet {
             }));
         }
         futures.collect().await
+    }
+
+    pub async fn simulate_lossy_network_round<
+        F: Future<Output = K> + Send,
+        K: Send + Sync + 'static,
+        U: Clone + Send + Sync + 'static,
+    >(
+        self,
+        user_data: U,
+        f: impl Fn(MpcNetConnection<TcpStream>, U) -> F
+            + Send
+            + Sync
+            + Clone
+            + 'static,
+    ) -> Vec<K> {
+        let mut futures = FuturesOrdered::new();
+        let mut sorted_nodes = self.nodes.into_iter().collect::<Vec<_>>();
+        sorted_nodes.sort_by(|a, b| a.0.cmp(&b.0));
+        for (_, connections) in sorted_nodes {
+            let next_f = f.clone();
+            let next_user_data = user_data.clone();
+            futures.push_back(Box::pin(async move {
+                let task =
+                    async move { next_f(connections, next_user_data).await };
+                let handle = tokio::task::spawn(task);
+                handle.await.unwrap()
+            }));
+        }
+        let result = futures.collect().await;
+
+        result
     }
 
     /// Get the connection for a given party ID
