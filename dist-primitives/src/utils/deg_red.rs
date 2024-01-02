@@ -23,15 +23,23 @@ pub async fn deg_red<
     let received_shares = net
         .client_send_or_king_receive_serialized(&x_share, sid, pp.t)
         .await?;
+
     let king_answer: Option<Vec<Vec<T>>> =
         received_shares.map(|rs| {
             let mut x_shares = transpose(rs.shares);
-
-            for x_share in &mut x_shares {
-                let xi: Vec<T> = pp.unpack2(x_share.clone());
-                *x_share = pp.pack(xi, &mut rand::thread_rng());
+            if rs.parties.len() == pp.n {
+                for x_share in &mut x_shares {
+                    let xi: Vec<T> = pp.unpack2(x_share.clone());
+                    *x_share = pp.pack(xi, &mut rand::thread_rng());
+                }
+                transpose(x_shares)   
+            } else {
+                for x_share in &mut x_shares {
+                    let xi: Vec<T> = pp.lagrange_unpack(&x_share, &rs.parties);
+                    *x_share = pp.pack(xi, &mut rand::thread_rng());
+                }
+                transpose(x_shares)   
             }
-            transpose(x_shares)
         });
 
     net.client_receive_or_king_send_serialized(king_answer, sid)
@@ -48,8 +56,8 @@ mod tests {
     use secret_sharing::pss::PackedSharingParams;
 
     use crate::utils::{deg_red::deg_red, pack::transpose};
-
     const L: usize = 4;
+
     #[tokio::test]
     async fn test_deg_red() {
         let pp = PackedSharingParams::<F>::new(L);
@@ -67,7 +75,6 @@ mod tests {
                 |net, (mul_shares, pp)| async move {
                     let idx = net.party_id() as usize;
                     let mul_share = mul_shares[idx].clone();
-
                     deg_red(
                         vec![mul_share],
                         &pp,
