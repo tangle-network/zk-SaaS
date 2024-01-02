@@ -1,4 +1,5 @@
-use ark_ff::Field;
+use ark_ff::{batch_inversion, FftField, Field};
+use ark_poly::domain::DomainCoeff;
 use std::mem;
 
 pub fn eval<F>(p: &[F], x: F) -> F
@@ -65,6 +66,36 @@ where
         p.copy_within(a.., 0);
         p[degree_offset..].fill(F::zero());
     }
+}
+
+pub fn lagrange_interpolate<T: DomainCoeff<F>, F: FftField>(
+    xs: &[F],
+    ys: &[T],
+) -> Vec<T> {
+    let roots = get_zero_roots(&xs);
+    let numerators: Vec<Vec<F>> =
+        xs.iter().map(|&x| syn_div(&roots, 1, x)).collect();
+
+    let mut denominators: Vec<F> = numerators
+        .iter()
+        .zip(xs)
+        .map(|(f, x)| eval(f, *x))
+        .collect();
+    batch_inversion(&mut denominators);
+
+    // result will contain coefficent form of the polynomial
+    let mut result = vec![T::zero(); numerators.len()];
+    for i in 0..ys.len() {
+        let mut y_slice = ys[i];
+        y_slice *= denominators[i];
+        for (j, res) in result.iter_mut().enumerate() {
+            let mut tmp = y_slice;
+            tmp *= numerators[i][j];
+            *res += tmp;
+        }
+    }
+
+    result
 }
 
 // HELPER FUNCTIONS

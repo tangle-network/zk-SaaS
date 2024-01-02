@@ -1,19 +1,19 @@
 use ark_poly::{domain::DomainCoeff, EvaluationDomain, Radix2EvaluationDomain};
 
-use ark_ff::{batch_inversion, FftField};
+use ark_ff::FftField;
 use ark_std::{rand::Rng, UniformRand};
 
-use crate::utils::{eval, get_zero_roots, syn_div};
+use crate::utils::lagrange_interpolate;
 
 /// Packed Secret Sharing Parameters
 ///
 /// Configures the parameters for packed secret sharing. It assumes that the number of parties is `4l`,
 /// the corrupting threshold is `l`, and checks that the number of parties (n) equals to `2(t + l)`.
 /// Reconstruction of multiplied shares is not possible if >1 party drops out in this configuration
-/// Alternate configurations (t, l, n) - #dropouts tolerated = n - (2(t+l-1) + 1):
+/// Some possible configurations `(t, l, n) - #dropouts tolerated = n - (2(t+l-1) + 1)`:
 /// 1. (1, 2, 8) - 3 (ROBUST)
-/// 2. (1, 4, 9) - 1 (FAST)
-/// 3. (3, 2, 9) - 1 (PRIVATE)
+/// 2. (1, 3, 8) - 1 (FAST)
+/// 3. (2, 2, 8) - 1 (PRIVATE) [currently implemented]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PackedSharingParams<F>
 where
@@ -99,8 +99,7 @@ impl<F: FftField> PackedSharingParams<F> {
         let mut result = secrets;
 
         // Resize the secrets with t+1 random points
-        let rand_points =
-            (0..self.t).map(|_| T::rand(rng)).collect::<Vec<T>>();
+        let rand_points = (0..self.t).map(|_| T::rand(rng)).collect::<Vec<T>>();
         result.extend_from_slice(&rand_points);
 
         // interpolating on secrets domain
@@ -171,31 +170,18 @@ impl<F: FftField> PackedSharingParams<F> {
             "Shares and parties length mismatch"
         );
 
+        debug_assert!(
+            parties.len() >= 2 * (self.t + self.l - 1) + 1,
+            "Not enough shares to reconstruct"
+        );
+
         let mut xs = Vec::new();
         let share_elements = self.share.elements().collect::<Vec<F>>();
         for i in 0..parties.len() {
             xs.push(share_elements[parties[i] as usize]);
         }
 
-        let roots = get_zero_roots(&xs);
-        let numerators: Vec<Vec<F>> =
-            xs.iter().map(|&x| syn_div(&roots, 1, x)).collect();
-        
-        let mut denominators: Vec<F> =
-            numerators.iter().zip(xs).map(|(f, x)| eval(f, x)).collect();
-        batch_inversion(&mut denominators);
-
-        // result will contain coefficent form of the polynomial
-        let mut result = vec![T::zero(); numerators.len()];
-        for i in 0..shares.len() {
-            let mut y_slice = shares[i];
-            y_slice *= denominators[i];
-            for (j, res) in result.iter_mut().enumerate() {
-                let mut tmp = y_slice;
-                tmp *= numerators[i][j];
-                *res += tmp;
-            }
-        }
+        let mut result = lagrange_interpolate(&xs, &shares);
 
         // evaluate on secrets domain
         self.secret2.fft_in_place(&mut result);
@@ -246,7 +232,9 @@ mod tests {
         // using only a subset of shares here
         let lagrange_secrets = pp.lagrange_unpack(
             &shares[0..pp.n - pp.t + 1],
-            &(0..(pp.n - pp.t + 1) as u32).collect::<Vec::<u32>>().as_slice(),
+            &(0..(pp.n - pp.t + 1) as u32)
+                .collect::<Vec<u32>>()
+                .as_slice(),
         );
 
         assert_eq!(expected, secrets);
@@ -284,8 +272,8 @@ mod tests {
 
         // can tolerate 1 party dropping out
         let lagrange_secrets = pp.lagrange_unpack(
-            &mul_shares[0..pp.n-1].to_vec(),
-            &(0..(pp.n-1) as u32).collect::<Vec::<u32>>().as_slice(),
+            &mul_shares[0..pp.n - 1].to_vec(),
+            &(0..(pp.n - 1) as u32).collect::<Vec<u32>>().as_slice(),
         );
 
         assert_eq!(expected, mul_secrets);
