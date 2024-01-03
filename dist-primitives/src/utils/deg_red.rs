@@ -2,11 +2,11 @@ use ark_ff::FftField;
 use ark_poly::domain::DomainCoeff;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::UniformRand;
+use mpc_net::ser_net::MpcSerNet;
 use mpc_net::{MpcNetError, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
-use mpc_net::ser_net::MpcSerNet;
 
-use super::pack::{transpose, best_unpack};
+use super::pack::{best_unpack, transpose};
 
 /// Reduces the degree of a poylnomial with the help of king
 pub async fn deg_red<

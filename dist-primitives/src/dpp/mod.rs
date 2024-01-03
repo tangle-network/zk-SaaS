@@ -3,7 +3,7 @@
 
 use crate::utils::{
     deg_red::deg_red,
-    pack::{pack_vec, transpose, best_unpack},
+    pack::{best_unpack, pack_vec, transpose},
 };
 use ark_ff::{FftField, Field, PrimeField};
 use mpc_net::ser_net::MpcSerNet;
