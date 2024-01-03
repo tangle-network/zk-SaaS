@@ -72,7 +72,7 @@ pub fn lagrange_interpolate<T: DomainCoeff<F>, F: FftField>(
     xs: &[F],
     ys: &[T],
 ) -> Vec<T> {
-    let roots = get_zero_roots(&xs);
+    let roots = get_zero_roots(xs);
     let numerators: Vec<Vec<F>> =
         xs.iter().map(|&x| syn_div(&roots, 1, x)).collect();
 

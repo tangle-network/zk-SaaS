@@ -41,7 +41,7 @@ impl<F: FftField> PackedSharingParams<F> {
             prev_s = tmp.clone();
         }
 
-        return (r, s);
+        (r, s)
     }
 
     pub fn decode_to_message(

@@ -1,3 +1,4 @@
+use crate::qap::PackedQAPShare;
 use ark_ff::{FftField, PrimeField};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_std::cfg_into_iter;
@@ -6,7 +7,6 @@ use dist_primitives::utils::deg_red::deg_red;
 use mpc_net::ser_net::MpcSerNet;
 use mpc_net::{MpcNetError, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
-use crate::qap::PackedQAPShare;
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;

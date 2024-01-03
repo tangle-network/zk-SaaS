@@ -1,5 +1,4 @@
-use ark_ec::{CurveGroup, Group};
-use ark_poly::EvaluationDomain;
+use ark_ec::CurveGroup;
 use mpc_net::ser_net::MpcSerNet;
 use mpc_net::{MpcNetError, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;

@@ -27,7 +27,7 @@ pub async fn deg_red<
         let mut x_shares = transpose(rs.shares);
 
         for x_share in &mut x_shares {
-            let xi: Vec<T> = best_unpack(&x_share, &rs.parties, pp);
+            let xi: Vec<T> = best_unpack(x_share, &rs.parties, pp);
             *x_share = pp.pack(xi, &mut rand::thread_rng());
         }
         transpose(x_shares)

@@ -171,7 +171,7 @@ impl<F: FftField> PackedSharingParams<F> {
         );
 
         debug_assert!(
-            parties.len() >= 2 * (self.t + self.l - 1) + 1,
+            parties.len() > 2 * (self.t + self.l - 1),
             "Not enough shares to reconstruct"
         );
 
@@ -181,7 +181,7 @@ impl<F: FftField> PackedSharingParams<F> {
             xs.push(share_elements[parties[i] as usize]);
         }
 
-        let mut result = lagrange_interpolate(&xs, &shares);
+        let mut result = lagrange_interpolate(&xs, shares);
 
         // evaluate on secrets domain
         self.secret2.fft_in_place(&mut result);
