@@ -24,7 +24,7 @@ pub fn pack_vec<F: FftField>(
     debug_assert_eq!(secrets.len() % pp.l, 0, "Mismatch of size in pack_vec");
 
     let rng = &mut thread_rng();
-    
+
     // pack shares
     cfg_chunks!(secrets, pp.l)
         .map(|x| pp.pack(x.to_vec(), rng))
