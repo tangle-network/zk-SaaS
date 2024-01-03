@@ -1,5 +1,6 @@
 use ark_ff::FftField;
 use ark_poly::domain::DomainCoeff;
+use ark_std::cfg_chunks;
 use rand::thread_rng;
 use secret_sharing::pss::PackedSharingParams;
 
@@ -24,8 +25,7 @@ pub fn pack_vec<F: FftField>(
 
     let rng = &mut thread_rng();
     // pack shares
-    let shares = secrets
-        .chunks(pp.l)
+    let shares = cfg_chunks!(secrets, pp.l)
         .map(|x| pp.pack(x.to_vec(), rng))
         .collect::<Vec<_>>();
 

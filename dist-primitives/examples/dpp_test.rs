@@ -14,22 +14,22 @@ pub async fn d_pp_test<F: FftField + PrimeField, Net: MpcNet>(
     dom: &Radix2EvaluationDomain<F>,
     net: &Net,
 ) {
-    // We apply FFT on this vector
-    // let mut x = vec![F::ONE; cd.m];
-    let mut x: Vec<F> = Vec::new();
-    for i in 0..dom.size() {
-        x.push(F::from((i + 1) as u64));
+    let px: Option<Vec<Vec<F>>>;
+    if net.is_king() {
+        let mut x: Vec<F> = Vec::new();
+        for i in 0..dom.size() {
+            x.push(F::from((i + 1) as u64));
+        }
+        px = Some(transpose(pack_vec(&x, pp)))
+    } else {
+        px = None;
     }
 
-    // Output to test against
-    let should_be_output = vec![F::one(); dom.size()];
+    let px_share = net
+        .client_receive_or_king_send_serialized(px, MultiplexedStreamID::One)
+        .await
+        .unwrap();
 
-    // pack x
-    let px = transpose(pack_vec(&x, pp));
-
-    println!("x: {}, party_id: {}", dom.size(), net.party_id());
-
-    let px_share = px[net.party_id() as usize].clone();
     let pp_px_share = d_pp(
         px_share.clone(),
         px_share.clone(),
@@ -39,8 +39,6 @@ pub async fn d_pp_test<F: FftField + PrimeField, Net: MpcNet>(
     )
     .await
     .unwrap();
-
-    // todo: investigate unpack2 failing here
 
     // Send to king who reconstructs and checks the answer
     net.client_send_or_king_receive_serialized(
@@ -58,23 +56,19 @@ pub async fn d_pp_test<F: FftField + PrimeField, Net: MpcNet>(
             .flat_map(|x| pp.unpack(x))
             .collect();
 
-        if net.is_king() {
-            debug_assert_eq!(should_be_output, pp_px);
-        }
+        debug_assert_eq!(vec![F::one(); dom.size()], pp_px);
     });
 }
-
-const N: usize = 1 << 3;
 
 #[tokio::main]
 async fn main() {
     env_logger::builder().format_timestamp(None).init();
 
-    let network = Net::new_local_testnet(N).await.unwrap();
+    let network = Net::new_local_testnet(8).await.unwrap();
     network
         .simulate_network_round((), |net, _| async move {
-            let pp = PackedSharingParams::<Fr>::new(N / 4);
-            let cd = Radix2EvaluationDomain::<Fr>::new(1 << 10).unwrap();
+            let pp = PackedSharingParams::<Fr>::new(2);
+            let cd = Radix2EvaluationDomain::<Fr>::new(1 << 5).unwrap();
             d_pp_test::<Fr, _>(&pp, &cd, &net).await;
         })
         .await;

@@ -75,7 +75,7 @@ impl<F: FftField> PackedSharingParams<F> {
 
         let mut result = secrets;
 
-        // Resize the secrets with t+1 zeros
+        // Resize the secrets with t zeros
         result.append(&mut vec![T::zero(); self.t]);
 
         // interpolating on secrets domain
@@ -98,12 +98,24 @@ impl<F: FftField> PackedSharingParams<F> {
 
         let mut result = secrets;
 
-        // Resize the secrets with t+1 random points
+        // Resize the secrets with t random points
         let rand_points = (0..self.t).map(|_| T::rand(rng)).collect::<Vec<T>>();
         result.extend_from_slice(&rand_points);
 
         // interpolating on secrets domain
         self.secret.ifft_in_place(&mut result);
+
+        #[cfg(debug_assertions)]
+        {
+            // assert that all but first l+t elements are zero
+            for item in result.iter().skip(self.l + self.t) {
+                debug_assert!(
+                    item.is_zero(),
+                    "Pack found non zero coefficient: {:?}",
+                    result
+                );
+            }
+        }
 
         // evaluate on share domain
         self.share.fft_in_place(&mut result);
@@ -140,7 +152,11 @@ impl<F: FftField> PackedSharingParams<F> {
         #[cfg(debug_assertions)]
         {
             for item in result.iter().skip(2 * (self.l + self.t) - 1) {
-                debug_assert!(item.is_zero(), "Unpack2 failed");
+                debug_assert!(
+                    item.is_zero(),
+                    "Unpack2 found non zero coefficient: {:?}",
+                    result
+                );
             }
         }
 
