@@ -24,12 +24,11 @@ pub fn pack_vec<F: FftField>(
     debug_assert_eq!(secrets.len() % pp.l, 0, "Mismatch of size in pack_vec");
 
     let rng = &mut thread_rng();
+    
     // pack shares
-    let shares = cfg_chunks!(secrets, pp.l)
+    cfg_chunks!(secrets, pp.l)
         .map(|x| pp.pack(x.to_vec(), rng))
-        .collect::<Vec<_>>();
-
-    shares
+        .collect::<Vec<_>>()
 }
 
 pub fn transpose<T: Clone>(matrix: Vec<Vec<T>>) -> Vec<Vec<T>> {
