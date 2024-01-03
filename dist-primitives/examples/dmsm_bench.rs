@@ -37,12 +37,12 @@ pub async fn d_msm_test<G: CurveGroup, Net: MpcNet>(
 #[tokio::main]
 async fn main() {
     env_logger::builder().format_timestamp(None).init();
-    let network = Net::new_local_testnet(4).await.unwrap();
+    let network = Net::new_local_testnet(8).await.unwrap();
 
     network
         .simulate_network_round((), |net, _| async move {
             let pp = PackedSharingParams::<Fr>::new(2);
-            for i in 10..20 {
+            for i in 10..14 {
                 let dom = Radix2EvaluationDomain::<Fr>::new(1 << i).unwrap();
                 println!("domain size: {}", dom.size());
                 d_msm_test::<ark_bls12_377::G1Projective, _>(&pp, &dom, &net)
