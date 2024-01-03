@@ -9,6 +9,19 @@ use mpc_net::ser_net::MpcSerNet;
 
 use super::pack::transpose;
 
+pub fn best_unpack<F: FftField, T: DomainCoeff<F> + UniformRand>(
+    shares: &[T],
+    parties: &[u32],
+    pp: &PackedSharingParams<F>,
+) -> Vec<T> {
+    debug_assert_eq!(shares.len(), parties.len());
+    if shares.len() == pp.n {
+        pp.unpack2(shares.to_vec())
+    } else {
+        pp.lagrange_unpack(shares, parties)
+    }
+}
+
 /// Reduces the degree of a poylnomial with the help of king
 pub async fn deg_red<
     F: FftField,
@@ -24,23 +37,15 @@ pub async fn deg_red<
         .client_send_or_king_receive_serialized(&x_share, sid, pp.t)
         .await?;
 
-    let king_answer: Option<Vec<Vec<T>>> =
-        received_shares.map(|rs| {
-            let mut x_shares = transpose(rs.shares);
-            if rs.parties.len() == pp.n {
-                for x_share in &mut x_shares {
-                    let xi: Vec<T> = pp.unpack2(x_share.clone());
-                    *x_share = pp.pack(xi, &mut rand::thread_rng());
-                }
-                transpose(x_shares)   
-            } else {
-                for x_share in &mut x_shares {
-                    let xi: Vec<T> = pp.lagrange_unpack(&x_share, &rs.parties);
-                    *x_share = pp.pack(xi, &mut rand::thread_rng());
-                }
-                transpose(x_shares)   
-            }
-        });
+    let king_answer: Option<Vec<Vec<T>>> = received_shares.map(|rs| {
+        let mut x_shares = transpose(rs.shares);
+
+        for x_share in &mut x_shares {
+            let xi: Vec<T> = best_unpack(&x_share, &rs.parties, pp);
+            *x_share = pp.pack(xi, &mut rand::thread_rng());
+        }
+        transpose(x_shares)
+    });
 
     net.client_receive_or_king_send_serialized(king_answer, sid)
         .await
@@ -50,8 +55,8 @@ pub async fn deg_red<
 mod tests {
     use ark_bls12_377::Fr as F;
     use ark_std::UniformRand;
-    use mpc_net::MpcNet;
     use mpc_net::ser_net::ReceivedShares;
+    use mpc_net::MpcNet;
     use mpc_net::{LocalTestNet, MultiplexedStreamID};
     use secret_sharing::pss::PackedSharingParams;
 
@@ -86,17 +91,19 @@ mod tests {
                 },
             )
             .await;
-        
+
         let shares = transpose(rs.shares);
         let computed = if rs.parties.len() == pp.n {
-            shares.into_iter()
-            .flat_map(|x| pp.unpack(x))
-            .collect::<Vec<_>>()
+            shares
+                .into_iter()
+                .flat_map(|x| pp.unpack(x))
+                .collect::<Vec<_>>()
         } else {
             println!("Using lagrange unpack");
-            shares.into_iter()
-            .flat_map(|x| pp.lagrange_unpack(&x, &rs.parties))
-            .collect::<Vec<_>>()
+            shares
+                .into_iter()
+                .flat_map(|x| pp.lagrange_unpack(&x, &rs.parties))
+                .collect::<Vec<_>>()
         };
 
         assert_eq!(computed, expected);

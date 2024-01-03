@@ -356,9 +356,9 @@ impl LocalTestNet {
         }
         let result: Vec<K> = futures.collect().await;
 
-        ReceivedShares{
-            shares: result[0..n_parties-1].to_vec(),
-            parties: (0..(n_parties-1) as u32).collect(),
+        ReceivedShares {
+            shares: result[0..n_parties - 1].to_vec(),
+            parties: (0..(n_parties - 1) as u32).collect(),
         }
     }
 

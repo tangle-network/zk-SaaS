@@ -2,7 +2,7 @@
 // Given x1, x2, .., xn, output x1, x1*x2, x1*x2*x3, .., x1*x2*..*xn
 
 use crate::utils::{
-    deg_red::deg_red,
+    deg_red::{best_unpack, deg_red},
     pack::{pack_vec, transpose},
 };
 use ark_ff::{FftField, Field, PrimeField};
@@ -36,47 +36,42 @@ pub async fn d_pp<F: FftField + PrimeField + Field, Net: MpcSerNet>(
         .client_send_or_king_receive_serialized(&numden_rand, sid, pp.t)
         .await?;
 
-    let king_answer: Option<Vec<Vec<F>>> =
-        received_shares.map(|rs| {
-            // nx(m/l) -> (m/l)xn
-            debug_assert_eq!(
-                rs.shares.len(),
-                pp.n,
-                "Mismatch of size in d_pp"
-            );
-            let numden_shares = transpose(rs.shares);
+    let king_answer: Option<Vec<Vec<F>>> = received_shares.map(|rs| {
+        // nx(m/l) -> (m/l)xn
+        debug_assert_eq!(rs.shares.len(), pp.n, "Mismatch of size in d_pp");
+        let numden_shares = transpose(rs.shares);
 
-            // Unpack the secrets
-            // (m/l)xn -> m
-            // iterate over pxss_shares, unpack to get a vector and append all the vectors
-            let mut numden: Vec<F> = numden_shares
-                .into_iter()
-                .flat_map(|x| pp.unpack2(x))
-                .collect();
+        // Unpack the secrets
+        // (m/l)xn -> m
+        // iterate over pxss_shares, unpack to get a vector and append all the vectors
+        let mut numden: Vec<F> = numden_shares
+            .into_iter()
+            .flat_map(|x| best_unpack(&x, &rs.parties, pp))
+            .collect();
 
-            for i in 0..numden.len() / 2 {
-                let den = numden[i + numden.len() / 2].inverse().unwrap();
-                numden[i] *= den;
-            }
+        for i in 0..numden.len() / 2 {
+            let den = numden[i + numden.len() / 2].inverse().unwrap();
+            numden[i] *= den;
+        }
 
-            numden.truncate(numden.len() / 2);
+        numden.truncate(numden.len() / 2);
 
-            // Compute the partial products across pxss
-            for i in 1..numden.len() {
-                let last = numden[i - 1];
-                numden[i] *= last;
-            }
+        // Compute the partial products across pxss
+        for i in 1..numden.len() {
+            let last = numden[i - 1];
+            numden[i] *= last;
+        }
 
-            // Pack the secrets
-            // m -> (m/l)xn
-            // (m/l)xl -> (m/l)xn
-            let pp_numden_shares = pack_vec(&numden, pp);
-            drop(numden);
+        // Pack the secrets
+        // m -> (m/l)xn
+        // (m/l)xl -> (m/l)xn
+        let pp_numden_shares = pack_vec(&numden, pp);
+        drop(numden);
 
-            // send shares to parties
-            // (m/l)xn -> nx(m/l)
-            transpose(pp_numden_shares)
-        });
+        // send shares to parties
+        // (m/l)xn -> nx(m/l)
+        transpose(pp_numden_shares)
+    });
 
     let mut pp_numden_rand = net
         .client_receive_or_king_send_serialized(king_answer, sid)
