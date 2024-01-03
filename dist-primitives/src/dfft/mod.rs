@@ -1,5 +1,4 @@
-use crate::utils::deg_red::best_unpack;
-use crate::utils::pack::{pack_vec, transpose};
+use crate::utils::pack::{pack_vec, transpose, best_unpack};
 use ark_ff::{FftField, PrimeField};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_std::log2;

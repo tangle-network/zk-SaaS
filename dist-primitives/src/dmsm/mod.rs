@@ -4,7 +4,7 @@ use mpc_net::ser_net::MpcSerNet;
 use mpc_net::{MpcNetError, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
 
-use crate::utils::deg_red::best_unpack;
+use crate::utils::pack::best_unpack;
 
 pub async fn d_msm<G: CurveGroup, Net: MpcSerNet>(
     bases: &[G::Affine],

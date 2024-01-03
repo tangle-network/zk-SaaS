@@ -4,23 +4,9 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use ark_std::UniformRand;
 use mpc_net::{MpcNetError, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
-
 use mpc_net::ser_net::MpcSerNet;
 
-use super::pack::transpose;
-
-pub fn best_unpack<F: FftField, T: DomainCoeff<F> + UniformRand>(
-    shares: &[T],
-    parties: &[u32],
-    pp: &PackedSharingParams<F>,
-) -> Vec<T> {
-    debug_assert_eq!(shares.len(), parties.len());
-    if shares.len() == pp.n {
-        pp.unpack2(shares.to_vec())
-    } else {
-        pp.lagrange_unpack(shares, parties)
-    }
-}
+use super::pack::{transpose, best_unpack};
 
 /// Reduces the degree of a poylnomial with the help of king
 pub async fn deg_red<

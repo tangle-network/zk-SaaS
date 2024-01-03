@@ -1,6 +1,20 @@
 use ark_ff::FftField;
+use ark_poly::domain::DomainCoeff;
 use rand::thread_rng;
 use secret_sharing::pss::PackedSharingParams;
+
+pub fn best_unpack<F: FftField, T: DomainCoeff<F>>(
+    shares: &[T],
+    parties: &[u32],
+    pp: &PackedSharingParams<F>,
+) -> Vec<T> {
+    debug_assert_eq!(shares.len(), parties.len());
+    if shares.len() == pp.n {
+        pp.unpack2(shares.to_vec())
+    } else {
+        pp.lagrange_unpack(shares, parties)
+    }
+}
 
 pub fn pack_vec<F: FftField>(
     secrets: &Vec<F>,

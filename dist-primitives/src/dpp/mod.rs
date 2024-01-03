@@ -2,8 +2,8 @@
 // Given x1, x2, .., xn, output x1, x1*x2, x1*x2*x3, .., x1*x2*..*xn
 
 use crate::utils::{
-    deg_red::{best_unpack, deg_red},
-    pack::{pack_vec, transpose},
+    deg_red::deg_red,
+    pack::{pack_vec, transpose, best_unpack},
 };
 use ark_ff::{FftField, Field, PrimeField};
 use mpc_net::ser_net::MpcSerNet;
