@@ -17,7 +17,7 @@ tokio = { version = "1.32.0", features = ["net", "time", "fs", "io-util", "macro
 auto_impl = "1.1.0"
 parking_lot = "0.12.1"
 tokio-util = { version = "0.7.9", features = ["codec"] }
-async_smux = "0.3.0"
+async_smux = "=0.3.0"
 serde = { version = "1.0.188", features = ["derive"] }
 bincode2 = "2.0.1"
 rcgen = "0.11.3"
