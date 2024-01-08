@@ -166,7 +166,7 @@ impl<F: FftField> PackedSharingParams<F> {
     }
 
     /// Runs lagrange interpolation to unpack the secrets. Can be used when some shares are missing.
-    /// todo: can be optimized by compting secrets directly instead of first interpolating the polynomial
+    /// TODO: can be optimized by computing secrets directly instead of first interpolating the polynomial
     pub fn lagrange_unpack<T: DomainCoeff<F>>(
         &self,
         shares: &[T],
