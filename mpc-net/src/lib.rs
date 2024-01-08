@@ -109,7 +109,7 @@ pub trait MpcNet: Send + Sync {
                 r.collect::<Vec<_>>().await
             };
 
-            let _finished = tokio::time::timeout(timeout, retrieve_task).await;
+            let _ = tokio::time::timeout(timeout, retrieve_task).await;
             let mut ret = results_store.lock().await;
             ret.entry(0).or_insert_with(|| bytes_out.clone()); // Add the king result
 
