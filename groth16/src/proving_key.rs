@@ -57,7 +57,6 @@ where
             .collect::<Vec<_>>();
 
         let rng = &mut ark_std::test_rng();
-
         let packed_s = cfg_chunks!(pre_packed_s, pp.l)
             .map(|chunk| pp.pack::<E::G1>(chunk.to_vec(), rng))
             .collect::<Vec<_>>();

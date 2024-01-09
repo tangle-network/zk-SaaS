@@ -7,6 +7,7 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
+use crate::ser_net::{MpcSerNet, ReceivedShares};
 use crate::{MpcNetError, MultiplexedStreamID};
 use async_smux::{MuxBuilder, MuxStream};
 use async_trait::async_trait;
@@ -58,7 +59,7 @@ impl<IO: AsyncRead + AsyncWrite + Unpin> Clone for Peer<IO> {
 }
 
 pub type WrappedMuxStream<T> = Framed<MuxStream<T>, LengthDelimitedCodec>;
-pub const MULTIPLEXED_STREAMS: usize = 3;
+pub const MULTIPLEXED_STREAMS: usize = MultiplexedStreamID::channel_count();
 
 /// Should be called immediately after making a connection to a peer.
 pub async fn multiplex_stream<
@@ -196,13 +197,26 @@ impl MpcNetConnection<TcpStream> {
 
         // Do a round with the king, to be sure everyone is ready
         let from_all = self
-            .client_send_or_king_receive(
-                &[self.id as u8] as &[u8],
+            .client_send_or_king_receive_serialized::<u32>(
+                &self.id,
+                genesis_round_channel,
+                0,
+            )
+            .await?;
+
+        if from_all.is_some() {
+            self.client_receive_or_king_send_serialized(
+                Some(from_all.unwrap().shares),
                 genesis_round_channel,
             )
             .await?;
-        self.client_receive_or_king_send(from_all, genesis_round_channel)
+        } else {
+            self.client_receive_or_king_send_serialized(
+                None,
+                genesis_round_channel,
+            )
             .await?;
+        }
 
         for peer in &self.peers {
             if peer.0 == &self.id {
@@ -311,6 +325,41 @@ impl LocalTestNet {
             }));
         }
         futures.collect().await
+    }
+
+    pub async fn simulate_lossy_network_round<
+        F: Future<Output = K> + Send,
+        K: Clone + Send + Sync + 'static,
+        U: Clone + Send + Sync + 'static,
+    >(
+        self,
+        user_data: U,
+        f: impl Fn(MpcNetConnection<TcpStream>, U) -> F
+            + Send
+            + Sync
+            + Clone
+            + 'static,
+    ) -> ReceivedShares<K> {
+        let mut futures = FuturesOrdered::new();
+        let mut sorted_nodes = self.nodes.into_iter().collect::<Vec<_>>();
+        sorted_nodes.sort_by(|a, b| a.0.cmp(&b.0));
+        let n_parties = sorted_nodes.len();
+        for (_, connections) in sorted_nodes {
+            let next_f = f.clone();
+            let next_user_data = user_data.clone();
+            futures.push_back(Box::pin(async move {
+                let task =
+                    async move { next_f(connections, next_user_data).await };
+                let handle = tokio::task::spawn(task);
+                handle.await.unwrap()
+            }));
+        }
+        let result: Vec<K> = futures.collect().await;
+
+        ReceivedShares {
+            shares: result[0..n_parties - 1].to_vec(),
+            parties: (0..(n_parties - 1) as u32).collect(),
+        }
     }
 
     /// Get the connection for a given party ID

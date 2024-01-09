@@ -2,10 +2,10 @@ use ark_bls12_377::Fr;
 use ark_ff::{FftField, PrimeField};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use dist_primitives::{
-    channel::MpcSerNet,
     dfft::{d_fft, fft_in_place_rearrange},
     utils::pack::transpose,
 };
+use mpc_net::ser_net::MpcSerNet;
 use mpc_net::{LocalTestNet as Net, MpcNet, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
 
@@ -40,7 +40,6 @@ pub async fn d_fft_test<F: FftField + PrimeField, Net: MpcNet>(
         .collect::<Vec<_>>();
 
     // Rearranging x
-
     let peval_share =
         d_fft(pcoeff_share, false, dom, pp, net, MultiplexedStreamID::One)
             .await
@@ -48,11 +47,15 @@ pub async fn d_fft_test<F: FftField + PrimeField, Net: MpcNet>(
 
     // Send to king who reconstructs and checks the answer
     let result = net
-        .send_to_king(&peval_share, MultiplexedStreamID::One)
+        .client_send_or_king_receive_serialized(
+            &peval_share,
+            MultiplexedStreamID::One,
+            pp.t,
+        )
         .await
         .unwrap();
-    if let Some(peval_shares) = result {
-        let peval_shares = transpose(peval_shares);
+    if let Some(rs) = result {
+        let peval_shares = transpose(rs.shares);
 
         let pevals: Vec<F> = peval_shares
             .into_iter()

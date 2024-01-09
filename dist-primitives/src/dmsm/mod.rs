@@ -1,5 +1,5 @@
-use crate::channel::MpcSerNet;
 use ark_ec::CurveGroup;
+use mpc_net::ser_net::MpcSerNet;
 use mpc_net::{MpcNetError, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
 
@@ -17,21 +17,23 @@ pub async fn d_msm<G: CurveGroup, Net: MpcSerNet>(
     debug_assert_eq!(bases.len(), scalars.len());
     log::debug!("bases: {}, scalars: {}", bases.len(), scalars.len());
     let c_share = G::msm(bases, scalars)?;
-
     // Now we do degree reduction -- psstoss
     // Send to king who reduces and sends shamir shares (not packed).
     // Should be randomized. First convert to projective share.
     let n_parties = net.n_parties();
     let king_answer: Option<Vec<G>> = net
-        .send_to_king(&c_share, sid)
+        .client_send_or_king_receive_serialized(&c_share, sid, pp.t)
         .await?
-        .map(|shares: Vec<G>| {
+        .map(|rs| {
             // TODO: Mask with random values.
-            let output: G = pp.unpack2(shares).iter().sum();
+
+            let result = pp.unpack_missing_shares(&rs.shares, &rs.parties);
+            let output: G = result.iter().sum();
             vec![output; n_parties]
         });
 
-    net.recv_from_king(king_answer, sid).await
+    net.client_receive_or_king_send_serialized(king_answer, sid)
+        .await
 }
 
 #[cfg(test)]

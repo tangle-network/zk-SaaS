@@ -1,11 +1,9 @@
-use crate::{
-    channel::MpcSerNet,
-    utils::pack::{pack_vec, transpose},
-};
+use crate::utils::pack::{pack_vec, transpose};
 use ark_ff::{FftField, PrimeField};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_std::log2;
 use log::debug;
+use mpc_net::ser_net::MpcSerNet;
 use mpc_net::{MpcNetError, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
 use std::mem;
@@ -180,15 +178,16 @@ async fn fft2_with_rearrange<F: FftField + PrimeField, Net: MpcSerNet>(
     let rng = &mut ark_std::test_rng();
     let mbyl = px.len();
 
-    let received_shares = net.send_to_king(&px, sid).await?;
+    let received_shares = net
+        .client_send_or_king_receive_serialized(&px, sid, pp.t)
+        .await?;
 
-    let king_answer = received_shares.map(|all_shares| {
-        let all_shares = transpose(all_shares);
+    let king_answer = received_shares.map(|rs| {
+        let all_shares = transpose(rs.shares);
         let mut s1: Vec<F> = vec![F::zero(); px.len() * pp.l];
 
         for (i, share) in (0..mbyl).zip(all_shares) {
-            //todo: avoid always running unpack2 but this makes the code messy with another flag
-            let tmp = pp.unpack2(share);
+            let tmp = pp.unpack_missing_shares(&share, &rs.parties);
 
             for j in 0..pp.l {
                 s1[i * pp.l + j] = tmp[j];
@@ -227,7 +226,9 @@ async fn fft2_with_rearrange<F: FftField + PrimeField, Net: MpcSerNet>(
 
     drop(px);
 
-    let got_from_king = net.recv_from_king(king_answer, sid).await?;
+    let got_from_king = net
+        .client_receive_or_king_send_serialized(king_answer, sid)
+        .await?;
 
     Ok(got_from_king)
 }
@@ -413,7 +414,6 @@ mod tests {
                 },
             )
             .await;
-
         let computed_poly_evals = transpose(result)
             .into_iter()
             .flat_map(|x| pp.unpack(x))

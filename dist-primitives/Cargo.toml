@@ -7,11 +7,10 @@ edition = "2021"
 
 [dependencies]
 ark-std = {version = "0.4.0", default-features = false, features = [ "print-trace", "std" ]}
-ark-ff = {version = "0.4.0", default-features = false}
+ark-ff = {version = "0.4.2", default-features = false}
 ark-poly = {version = "0.4.0", default-features = false}
-ark-ec = {version = "0.4.0", default-features = false}
-ark-serialize = { version = "0.4.0", default-features = false, features = [ "derive" ] }
-
+ark-ec = {version = "0.4.2", default-features = false}
+ark-serialize = {version = "0.4.0", default-features = false}
 ark-bls12-377 = {version = "0.4.0", default-features = false, features = ["curve"] }
 
 secret-sharing = { version = "0.1.0", path = "../secret-sharing" }

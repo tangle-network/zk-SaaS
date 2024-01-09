@@ -1,4 +1,5 @@
 use ark_ff::FftField;
+use ark_std::cfg_chunks;
 use rand::thread_rng;
 use secret_sharing::pss::PackedSharingParams;
 
@@ -9,13 +10,11 @@ pub fn pack_vec<F: FftField>(
     debug_assert_eq!(secrets.len() % pp.l, 0, "Mismatch of size in pack_vec");
 
     let rng = &mut thread_rng();
-    // pack shares
-    let shares = secrets
-        .chunks(pp.l)
-        .map(|x| pp.pack(x.to_vec(), rng))
-        .collect::<Vec<_>>();
 
-    shares
+    // pack shares
+    cfg_chunks!(secrets, pp.l)
+        .map(|x| pp.pack(x.to_vec(), rng))
+        .collect::<Vec<_>>()
 }
 
 pub fn transpose<T: Clone>(matrix: Vec<Vec<T>>) -> Vec<Vec<T>> {

@@ -1,14 +1,18 @@
 pub mod multi;
 pub mod prod;
+pub mod ser_net;
 
 use async_trait::async_trait;
 use auto_impl::auto_impl;
 use futures::stream::FuturesOrdered;
-use futures::TryStreamExt;
+use futures::StreamExt;
 pub use multi::LocalTestNet;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::Mutex;
 use tokio_util::bytes::Bytes;
 
 #[derive(Clone, Debug)]
@@ -25,11 +29,32 @@ impl<T: ToString> From<T> for MpcNetError {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash, Copy)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Hash,
+    Copy,
+    strum::EnumCount,
+)]
 pub enum MultiplexedStreamID {
     Zero = 0,
     One = 1,
     Two = 2,
+}
+
+impl MultiplexedStreamID {
+    pub const fn channel_count() -> usize {
+        <MultiplexedStreamID as strum::EnumCount>::COUNT
+    }
+}
+
+pub enum ClientSendOrKingReceiveResult {
+    Full(Vec<Bytes>),
+    Partial(HashMap<u32, Bytes>),
 }
 
 #[async_trait]
@@ -57,40 +82,52 @@ pub trait MpcNet: Send + Sync {
         bytes: Bytes,
         sid: MultiplexedStreamID,
     ) -> Result<(), MpcNetError>;
+
     /// All parties send bytes to the king. The king receives all the bytes
+    /// Note: this function is intended to be used in ser_net only since timeouts
+    /// may occur in this stage.
     async fn client_send_or_king_receive(
         &self,
         bytes: &[u8],
         sid: MultiplexedStreamID,
-    ) -> Result<Option<Vec<Bytes>>, MpcNetError> {
+        timeout: Duration,
+    ) -> Result<Option<ClientSendOrKingReceiveResult>, MpcNetError> {
         let bytes_out = Bytes::copy_from_slice(bytes);
-        let own_id = self.party_id();
+        let results_store = &Arc::new(Mutex::new(HashMap::new()));
 
         let r = if self.is_king() {
-            let mut r = FuturesOrdered::new();
+            let retrieve_task = async move {
+                let mut r = FuturesOrdered::new();
+                for id in 1..self.n_parties() as u32 {
+                    r.push_back(Box::pin(async move {
+                        let bytes_in = self.recv_from(id, sid).await?;
+                        results_store.lock().await.insert(id, bytes_in);
+                        Ok::<_, MpcNetError>(())
+                    }));
+                }
 
-            for id in 0..self.n_parties() as u32 {
-                let bytes_out: Bytes = bytes_out.clone();
-                r.push_back(Box::pin(async move {
-                    let bytes_in = if id == own_id {
-                        bytes_out
-                    } else {
-                        self.recv_from(id, sid).await?
-                    };
+                r.collect::<Vec<_>>().await
+            };
 
-                    Ok::<_, MpcNetError>((id, bytes_in))
-                }));
+            let _ = tokio::time::timeout(timeout, retrieve_task).await;
+            let mut ret = results_store.lock().await;
+            ret.entry(0).or_insert_with(|| bytes_out.clone()); // Add the king result
+
+            if ret.len() == self.n_parties() {
+                // All results obtained
+                let mut sorted_ret = Vec::new();
+                for x in 0..self.n_parties() {
+                    sorted_ret
+                        .push(ret.remove(&(x as u32)).expect("Should exist"));
+                }
+
+                Ok(Some(ClientSendOrKingReceiveResult::Full(sorted_ret)))
+            } else {
+                // Only some results obtained. Leave the recovery logic to the function caller
+                Ok(Some(ClientSendOrKingReceiveResult::Partial(
+                    ret.drain().collect(),
+                )))
             }
-
-            let mut ret: HashMap<u32, Bytes> = r.try_collect().await?;
-            ret.entry(0).or_insert_with(|| bytes_out.clone());
-
-            let mut sorted_ret = Vec::new();
-            for x in 0..self.n_parties() {
-                sorted_ret.push(ret.remove(&(x as u32)).unwrap());
-            }
-
-            Ok(Some(sorted_ret))
         } else {
             self.send_to(0, bytes_out, sid).await?;
             Ok(None)
@@ -136,21 +173,5 @@ pub trait MpcNet: Send + Sync {
 
             self.recv_from(0, sid).await
         }
-    }
-
-    /// Everyone sends bytes to the king, who receives those bytes, runs a computation on them, and
-    /// redistributes the resulting bytes.
-    ///
-    /// The king's computation is given by a function, `f`
-    /// proceeds.
-    async fn king_compute(
-        &self,
-        bytes: &[u8],
-        sid: MultiplexedStreamID,
-        f: impl Fn(Vec<Bytes>) -> Vec<Bytes> + Send,
-    ) -> Result<Bytes, MpcNetError> {
-        let king_response =
-            self.client_send_or_king_receive(bytes, sid).await?.map(f);
-        self.client_receive_or_king_send(king_response, sid).await
     }
 }
