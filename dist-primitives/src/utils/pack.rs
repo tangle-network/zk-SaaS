@@ -4,6 +4,7 @@ use ark_std::{cfg_chunks, UniformRand};
 use rand::thread_rng;
 use secret_sharing::pss::PackedSharingParams;
 
+// TODO: maybe make this an impl of pp?
 pub fn pack_vec<F: FftField, T: DomainCoeff<F> + UniformRand>(
     secrets: &Vec<T>,
     pp: &PackedSharingParams<F>,
