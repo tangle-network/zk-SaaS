@@ -60,7 +60,8 @@ impl<F: FftField + PrimeField> FftMask<F> {
             for i in 0..mask_values.len() / pp.l {
                 out_shares.push(
                     pp.pack(
-                        mask_values.iter()
+                        mask_values
+                            .iter()
                             .skip(i)
                             .step_by(mask_values.len() / pp.l)
                             .cloned()
@@ -241,7 +242,11 @@ async fn fft2_with_rearrange<F: FftField + PrimeField, Net: MpcSerNet>(
     let rng = &mut ark_std::test_rng();
     let mbyl = px.len();
 
-    let out = px.iter().zip(fft_mask.in_mask.iter()).map(|(x, m)| *x + *m).collect::<Vec<_>>();
+    let out = px
+        .iter()
+        .zip(fft_mask.in_mask.iter())
+        .map(|(x, m)| *x + *m)
+        .collect::<Vec<_>>();
 
     let received_shares = net
         .client_send_or_king_receive_serialized(&out, sid, pp.t)
@@ -296,7 +301,11 @@ async fn fft2_with_rearrange<F: FftField + PrimeField, Net: MpcSerNet>(
         .await?;
 
     // unmask
-    let out_share = out_share.iter().zip(fft_mask.out_mask.iter()).map(|(x, m)| *x + *m).collect::<Vec<_>>();
+    let out_share = out_share
+        .iter()
+        .zip(fft_mask.out_mask.iter())
+        .map(|(x, m)| *x + *m)
+        .collect::<Vec<_>>();
 
     Ok(out_share)
 }

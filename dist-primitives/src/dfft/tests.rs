@@ -8,10 +8,10 @@ mod tests {
     use mpc_net::MultiplexedStreamID;
     use secret_sharing::pss::PackedSharingParams;
 
-    use crate::dfft::FftMask;
     use crate::dfft::d_fft;
     use crate::dfft::d_ifft;
     use crate::dfft::fft_in_place_rearrange;
+    use crate::dfft::FftMask;
     use crate::utils::pack::transpose;
 
     const L: usize = 2;
@@ -178,7 +178,6 @@ mod tests {
             rng,
         );
 
-
         let result = network
             .simulate_network_round(
                 (pack_evals, ifft_mask, fft_mask, pp, constraint),
@@ -278,65 +277,75 @@ mod tests {
         ];
 
         eprintln!("Running coset_d_ifftxd_ifft ...");
-        let result = network
-            .simulate_network_round(
-                (pack_evals, fft_mask, pp, constraint, constraint_coset),
-                |net, (pack_evals, fft_mask, pp, constraint, constraint_coset)| async move {
-                    let idx = net.party_id() as usize;
-                    let peval_share =
-                        pack_evals.iter().map(|x| x[idx]).collect::<Vec<_>>();
-                    // starting with evals over dom
-                    let p_coeff = d_ifft(
-                        peval_share,
-                        &fft_mask[0][idx],
-                        true,
-                        &constraint,
-                        constraint_coset.coset_offset(),
-                        &pp,
-                        &net,
-                        MultiplexedStreamID::Zero,
-                    )
-                    .await
-                    .unwrap();
-                    let coset_peval_share = d_fft(
-                        p_coeff,
-                        &fft_mask[1][idx],
-                        true,
-                        &constraint,
-                        &pp,
-                        &net,
-                        MultiplexedStreamID::Zero,
-                    )
-                    .await
-                    .unwrap();
-                    // obtained evals over coset_dom
-                    let p_coeff = d_ifft(
-                        coset_peval_share,
-                        &fft_mask[2][idx],
-                        true,
-                        &constraint,
-                        constraint_coset.coset_offset_inv(),
-                        &pp,
-                        &net,
-                        MultiplexedStreamID::Zero,
-                    )
-                    .await
-                    .unwrap();
-                    d_fft(
-                        p_coeff,
-                        &fft_mask[3][idx],
-                        false,
-                        &constraint,
-                        &pp,
-                        &net,
-                        MultiplexedStreamID::Zero,
-                    )
-                    .await
-                    .unwrap()
-                    // back to evals over dom
-                },
-            )
-            .await;
+        let result =
+            network
+                .simulate_network_round(
+                    (pack_evals, fft_mask, pp, constraint, constraint_coset),
+                    |net,
+                     (
+                        pack_evals,
+                        fft_mask,
+                        pp,
+                        constraint,
+                        constraint_coset,
+                    )| async move {
+                        let idx = net.party_id() as usize;
+                        let peval_share = pack_evals
+                            .iter()
+                            .map(|x| x[idx])
+                            .collect::<Vec<_>>();
+                        // starting with evals over dom
+                        let p_coeff = d_ifft(
+                            peval_share,
+                            &fft_mask[0][idx],
+                            true,
+                            &constraint,
+                            constraint_coset.coset_offset(),
+                            &pp,
+                            &net,
+                            MultiplexedStreamID::Zero,
+                        )
+                        .await
+                        .unwrap();
+                        let coset_peval_share = d_fft(
+                            p_coeff,
+                            &fft_mask[1][idx],
+                            true,
+                            &constraint,
+                            &pp,
+                            &net,
+                            MultiplexedStreamID::Zero,
+                        )
+                        .await
+                        .unwrap();
+                        // obtained evals over coset_dom
+                        let p_coeff = d_ifft(
+                            coset_peval_share,
+                            &fft_mask[2][idx],
+                            true,
+                            &constraint,
+                            constraint_coset.coset_offset_inv(),
+                            &pp,
+                            &net,
+                            MultiplexedStreamID::Zero,
+                        )
+                        .await
+                        .unwrap();
+                        d_fft(
+                            p_coeff,
+                            &fft_mask[3][idx],
+                            false,
+                            &constraint,
+                            &pp,
+                            &net,
+                            MultiplexedStreamID::Zero,
+                        )
+                        .await
+                        .unwrap()
+                        // back to evals over dom
+                    },
+                )
+                .await;
         eprintln!("coset_d_ifftxd_fft done ...");
         eprintln!("Computing x evals from the shares ...");
         let computed_poly_evals = transpose(result)

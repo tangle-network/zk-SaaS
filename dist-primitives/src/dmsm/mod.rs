@@ -41,7 +41,7 @@ impl<G: CurveGroup> MsmMask<G> {
             .into_iter()
             .zip(out_mask_shares.iter())
             .map(|(in_mask_share, out_mask_share)| {
-                Self::new(in_mask_share, out_mask_share.clone())
+                Self::new(in_mask_share, *out_mask_share)
             })
             .collect()
     }
