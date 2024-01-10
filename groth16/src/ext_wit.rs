@@ -2,7 +2,7 @@ use crate::qap::PackedQAPShare;
 use ark_ff::{FftField, PrimeField};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use ark_std::cfg_into_iter;
-use dist_primitives::dfft::{d_fft, d_ifft};
+use dist_primitives::dfft::{d_fft, d_ifft, FftMask};
 use dist_primitives::utils::deg_red::{deg_red, DegRedMask};
 use mpc_net::ser_net::MpcSerNet;
 use mpc_net::{MpcNetError, MultiplexedStreamID};
@@ -17,6 +17,7 @@ pub async fn libsnark_h<
     Net: MpcSerNet,
 >(
     qap_share: PackedQAPShare<F, D>,
+    fft_mask: &[FftMask<F>; 7], // 3 ifft, 3 fft and 1 coset ifft
     pp: &PackedSharingParams<F>,
     net: &Net,
 ) -> Result<Vec<F>, MpcNetError> {
@@ -29,6 +30,7 @@ pub async fn libsnark_h<
 
     let a_coeff_fut = d_ifft(
         qap_share.a,
+        &fft_mask[0],
         true,
         &domain,
         coset_dom.coset_offset(),
@@ -38,6 +40,7 @@ pub async fn libsnark_h<
     );
     let b_coeff_fut = d_ifft(
         qap_share.b,
+        &fft_mask[1],
         true,
         &domain,
         coset_dom.coset_offset(),
@@ -47,6 +50,7 @@ pub async fn libsnark_h<
     );
     let c_coeff_fut = d_ifft(
         qap_share.c,
+        &fft_mask[2],
         true,
         &domain,
         coset_dom.coset_offset(),
@@ -58,9 +62,12 @@ pub async fn libsnark_h<
     let (a_coeff, b_coeff, c_coeff) =
         tokio::try_join!(a_coeff_fut, b_coeff_fut, c_coeff_fut)?;
 
-    let a_eval_fut = d_fft(a_coeff, true, &domain, pp, net, CHANNEL0);
-    let b_eval_fut = d_fft(b_coeff, true, &domain, pp, net, CHANNEL1);
-    let c_eval_fut = d_fft(c_coeff, true, &domain, pp, net, CHANNEL2);
+    let a_eval_fut =
+        d_fft(a_coeff, &fft_mask[3], true, &domain, pp, net, CHANNEL0);
+    let b_eval_fut =
+        d_fft(b_coeff, &fft_mask[4], true, &domain, pp, net, CHANNEL1);
+    let c_eval_fut =
+        d_fft(c_coeff, &fft_mask[5], true, &domain, pp, net, CHANNEL2);
 
     // evaluations of a, b, c over the coset
     let (a_eval, b_eval, c_eval) =
@@ -81,6 +88,7 @@ pub async fn libsnark_h<
     // run coset_ifft to get back coefficients of h
     let h_coeff = d_ifft(
         h_eval,
+        &fft_mask[6],
         false,
         &domain,
         coset_dom.coset_offset_inv(),
@@ -99,6 +107,7 @@ pub async fn circom_h<
     Net: MpcSerNet,
 >(
     qap_share: PackedQAPShare<F, D>,
+    fft_mask: &[FftMask<F>; 6], // 3 ifft and 3 fft
     degred_mask: &DegRedMask<F, F>,
     pp: &PackedSharingParams<F>,
     net: &Net,
@@ -115,19 +124,46 @@ pub async fn circom_h<
         domain_double.element(1)
     };
 
-    let a_coeff_fut =
-        d_ifft(qap_share.a, true, &domain, root_of_unity, pp, net, CHANNEL0);
-    let b_coeff_fut =
-        d_ifft(qap_share.b, true, &domain, root_of_unity, pp, net, CHANNEL1);
-    let c_coeff_fut =
-        d_ifft(qap_share.c, true, &domain, root_of_unity, pp, net, CHANNEL2);
+    let a_coeff_fut = d_ifft(
+        qap_share.a,
+        &fft_mask[0],
+        true,
+        &domain,
+        root_of_unity,
+        pp,
+        net,
+        CHANNEL0,
+    );
+    let b_coeff_fut = d_ifft(
+        qap_share.b,
+        &fft_mask[1],
+        true,
+        &domain,
+        root_of_unity,
+        pp,
+        net,
+        CHANNEL1,
+    );
+    let c_coeff_fut = d_ifft(
+        qap_share.c,
+        &fft_mask[2],
+        true,
+        &domain,
+        root_of_unity,
+        pp,
+        net,
+        CHANNEL2,
+    );
 
     let (a_coeff, b_coeff, c_coeff) =
         tokio::try_join!(a_coeff_fut, b_coeff_fut, c_coeff_fut)?;
 
-    let a_eval_fut = d_fft(a_coeff, false, &domain, pp, net, CHANNEL0);
-    let b_eval_fut = d_fft(b_coeff, false, &domain, pp, net, CHANNEL1);
-    let c_eval_fut = d_fft(c_coeff, false, &domain, pp, net, CHANNEL2);
+    let a_eval_fut =
+        d_fft(a_coeff, &fft_mask[3], false, &domain, pp, net, CHANNEL0);
+    let b_eval_fut =
+        d_fft(b_coeff, &fft_mask[4], false, &domain, pp, net, CHANNEL1);
+    let c_eval_fut =
+        d_fft(c_coeff, &fft_mask[5], false, &domain, pp, net, CHANNEL2);
 
     // evaluations of a, b, c over the coset
     let (a_eval, b_eval, c_eval) =
@@ -154,6 +190,7 @@ mod tests {
     use ark_relations::r1cs::ConstraintSynthesizer;
     use ark_relations::r1cs::ConstraintSystem;
     use ark_std::cfg_iter_mut;
+    use ark_std::One;
     use dist_primitives::utils::deg_red::DegRedMask;
     use dist_primitives::utils::pack::transpose;
     use mpc_net::LocalTestNet;
@@ -251,6 +288,7 @@ mod tests {
     async fn libsnark_dummy_ext_witness() {
         let m = 32usize;
 
+        let rng = &mut thread_rng();
         let a = (0..m).map(|x| Bn254Fr::from(x as u64)).collect::<Vec<_>>();
         let b = (0..m).map(|x| Bn254Fr::from(x as u64)).collect::<Vec<_>>();
         let c = a
@@ -273,14 +311,86 @@ mod tests {
             domain,
         };
         let qap_shares = qap.pss(&pp);
+
+        let coset_dom = domain.get_coset(Bn254Fr::GENERATOR).unwrap();
+        let fft_masks = [
+            FftMask::<Bn254Fr>::sample(
+                true,
+                coset_dom.coset_offset(),
+                domain.group_gen_inv(),
+                domain.size(),
+                &pp,
+                rng,
+            ),
+            FftMask::<Bn254Fr>::sample(
+                true,
+                coset_dom.coset_offset(),
+                domain.group_gen_inv(),
+                domain.size(),
+                &pp,
+                rng,
+            ),
+            FftMask::<Bn254Fr>::sample(
+                true,
+                coset_dom.coset_offset(),
+                domain.group_gen_inv(),
+                domain.size(),
+                &pp,
+                rng,
+            ),
+            FftMask::<Bn254Fr>::sample(
+                true,
+                Bn254Fr::one(),
+                domain.group_gen(),
+                domain.size(),
+                &pp,
+                rng,
+            ),
+            FftMask::<Bn254Fr>::sample(
+                true,
+                Bn254Fr::one(),
+                domain.group_gen(),
+                domain.size(),
+                &pp,
+                rng,
+            ),
+            FftMask::<Bn254Fr>::sample(
+                true,
+                Bn254Fr::one(),
+                domain.group_gen(),
+                domain.size(),
+                &pp,
+                rng,
+            ),
+            FftMask::<Bn254Fr>::sample(
+                false,
+                coset_dom.coset_offset_inv(),
+                domain.group_gen_inv(),
+                domain.size(),
+                &pp,
+                rng,
+            ),
+        ];
+
         let network = LocalTestNet::new_local_testnet(pp.n).await.unwrap();
 
         let result = network
             .simulate_network_round(
-                (pp.clone(), qap_shares),
-                |net, (pp, qap_shares)| async move {
+                (pp.clone(), qap_shares, fft_masks),
+                |net, (pp, qap_shares, fft_masks)| async move {
+                    let fft_mask = [
+                        fft_masks[0][net.party_id() as usize].clone(),
+                        fft_masks[1][net.party_id() as usize].clone(),
+                        fft_masks[2][net.party_id() as usize].clone(),
+                        fft_masks[3][net.party_id() as usize].clone(),
+                        fft_masks[4][net.party_id() as usize].clone(),
+                        fft_masks[5][net.party_id() as usize].clone(),
+                        fft_masks[6][net.party_id() as usize].clone(),
+                    ];
+
                     libsnark_h(
                         qap_shares[net.party_id() as usize].clone(),
+                        &fft_mask,
                         &pp,
                         &net,
                     )
@@ -326,18 +436,89 @@ mod tests {
         let qap_shares = qap.pss(&pp);
         let network = LocalTestNet::new_local_testnet(pp.n).await.unwrap();
         let rng = &mut thread_rng();
+
+        let root_of_unity = {
+            let domain_size_double = 2 * domain.size();
+            let domain_double =
+                Radix2EvaluationDomain::<Bn254Fr>::new(domain_size_double)
+                    .unwrap();
+            domain_double.element(1)
+        };
+
+        let fft_masks = [
+            FftMask::<Bn254Fr>::sample(
+                true,
+                root_of_unity,
+                domain.group_gen_inv(),
+                domain.size(),
+                &pp,
+                rng,
+            ),
+            FftMask::<Bn254Fr>::sample(
+                true,
+                root_of_unity,
+                domain.group_gen_inv(),
+                domain.size(),
+                &pp,
+                rng,
+            ),
+            FftMask::<Bn254Fr>::sample(
+                true,
+                root_of_unity,
+                domain.group_gen_inv(),
+                domain.size(),
+                &pp,
+                rng,
+            ),
+            FftMask::<Bn254Fr>::sample(
+                false,
+                Bn254Fr::one(),
+                domain.group_gen(),
+                domain.size(),
+                &pp,
+                rng,
+            ),
+            FftMask::<Bn254Fr>::sample(
+                false,
+                Bn254Fr::one(),
+                domain.group_gen(),
+                domain.size(),
+                &pp,
+                rng,
+            ),
+            FftMask::<Bn254Fr>::sample(
+                false,
+                Bn254Fr::one(),
+                domain.group_gen(),
+                domain.size(),
+                &pp,
+                rng,
+            ),
+        ];
+
         let degred_masks = DegRedMask::<Bn254Fr, Bn254Fr>::sample(
             &pp,
             Bn254Fr::from(1u32),
             domain.size() / pp.l,
             rng,
         );
+
         let result = network
             .simulate_network_round(
-                (pp.clone(), qap_shares, degred_masks),
-                |net, (pp, qap_shares, degred_masks)| async move {
+                (pp.clone(), qap_shares, fft_masks, degred_masks),
+                |net, (pp, qap_shares, fft_masks, degred_masks)| async move {
+                    let fft_mask = [
+                        fft_masks[0][net.party_id() as usize].clone(),
+                        fft_masks[1][net.party_id() as usize].clone(),
+                        fft_masks[2][net.party_id() as usize].clone(),
+                        fft_masks[3][net.party_id() as usize].clone(),
+                        fft_masks[4][net.party_id() as usize].clone(),
+                        fft_masks[5][net.party_id() as usize].clone(),
+                    ];
+
                     circom_h(
                         qap_shares[net.party_id() as usize].clone(),
+                        &fft_mask,
                         &degred_masks[net.party_id() as usize],
                         &pp,
                         &net,
@@ -391,19 +572,92 @@ mod tests {
         let pp = PackedSharingParams::new(2);
         let network = LocalTestNet::new_local_testnet(pp.n).await.unwrap();
         let qap_shares = qap.pss(&pp);
+
+        let domain = qap_shares[0].domain;
         let rng = &mut thread_rng();
+
+        let root_of_unity = {
+            let domain_size_double = 2 * domain.size();
+            let domain_double =
+                Radix2EvaluationDomain::<Bn254Fr>::new(domain_size_double)
+                    .unwrap();
+            domain_double.element(1)
+        };
+
+        let fft_masks = [
+            FftMask::<Bn254Fr>::sample(
+                true,
+                root_of_unity,
+                domain.group_gen_inv(),
+                domain.size(),
+                &pp,
+                rng,
+            ),
+            FftMask::<Bn254Fr>::sample(
+                true,
+                root_of_unity,
+                domain.group_gen_inv(),
+                domain.size(),
+                &pp,
+                rng,
+            ),
+            FftMask::<Bn254Fr>::sample(
+                true,
+                root_of_unity,
+                domain.group_gen_inv(),
+                domain.size(),
+                &pp,
+                rng,
+            ),
+            FftMask::<Bn254Fr>::sample(
+                false,
+                Bn254Fr::one(),
+                domain.group_gen(),
+                domain.size(),
+                &pp,
+                rng,
+            ),
+            FftMask::<Bn254Fr>::sample(
+                false,
+                Bn254Fr::one(),
+                domain.group_gen(),
+                domain.size(),
+                &pp,
+                rng,
+            ),
+            FftMask::<Bn254Fr>::sample(
+                false,
+                Bn254Fr::one(),
+                domain.group_gen(),
+                domain.size(),
+                &pp,
+                rng,
+            ),
+        ];
+
         let degred_masks = DegRedMask::<Bn254Fr, Bn254Fr>::sample(
             &pp,
             Bn254Fr::from(1u32),
-            qap_shares[0].domain.size() / pp.l,
+            domain.size() / pp.l,
             rng,
         );
+
         let result = network
             .simulate_network_round(
-                (pp.clone(), qap_shares, degred_masks),
-                |net, (pp, qap_shares, degred_masks)| async move {
+                (pp.clone(), qap_shares, fft_masks, degred_masks),
+                |net, (pp, qap_shares, fft_masks, degred_masks)| async move {
+                    let fft_mask = [
+                        fft_masks[0][net.party_id() as usize].clone(),
+                        fft_masks[1][net.party_id() as usize].clone(),
+                        fft_masks[2][net.party_id() as usize].clone(),
+                        fft_masks[3][net.party_id() as usize].clone(),
+                        fft_masks[4][net.party_id() as usize].clone(),
+                        fft_masks[5][net.party_id() as usize].clone(),
+                    ];
+
                     circom_h(
                         qap_shares[net.party_id() as usize].clone(),
+                        &fft_mask,
                         &degred_masks[net.party_id() as usize],
                         &pp,
                         &net,
@@ -418,7 +672,7 @@ mod tests {
             .into_iter()
             .flat_map(|x| pp.unpack(x))
             .collect::<Vec<_>>();
-        // todo: need to do degree reduction here.
+
         assert_eq!(h, computed_h);
     }
 }

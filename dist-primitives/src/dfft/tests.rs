@@ -241,7 +241,7 @@ mod tests {
             pack_evals.push(pp.pack(secrets, rng));
         }
 
-        let fft_mask = [
+        let fft_masks = [
             FftMask::<F>::sample(
                 true,
                 constraint_coset.coset_offset(),
@@ -280,11 +280,11 @@ mod tests {
         let result =
             network
                 .simulate_network_round(
-                    (pack_evals, fft_mask, pp, constraint, constraint_coset),
+                    (pack_evals, fft_masks, pp, constraint, constraint_coset),
                     |net,
                      (
                         pack_evals,
-                        fft_mask,
+                        fft_masks,
                         pp,
                         constraint,
                         constraint_coset,
@@ -297,7 +297,7 @@ mod tests {
                         // starting with evals over dom
                         let p_coeff = d_ifft(
                             peval_share,
-                            &fft_mask[0][idx],
+                            &fft_masks[0][idx],
                             true,
                             &constraint,
                             constraint_coset.coset_offset(),
@@ -309,7 +309,7 @@ mod tests {
                         .unwrap();
                         let coset_peval_share = d_fft(
                             p_coeff,
-                            &fft_mask[1][idx],
+                            &fft_masks[1][idx],
                             true,
                             &constraint,
                             &pp,
@@ -321,7 +321,7 @@ mod tests {
                         // obtained evals over coset_dom
                         let p_coeff = d_ifft(
                             coset_peval_share,
-                            &fft_mask[2][idx],
+                            &fft_masks[2][idx],
                             true,
                             &constraint,
                             constraint_coset.coset_offset_inv(),
@@ -333,7 +333,7 @@ mod tests {
                         .unwrap();
                         d_fft(
                             p_coeff,
-                            &fft_mask[3][idx],
+                            &fft_masks[3][idx],
                             false,
                             &constraint,
                             &pp,
