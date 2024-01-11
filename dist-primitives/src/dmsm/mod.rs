@@ -45,6 +45,15 @@ impl<G: CurveGroup> MsmMask<G> {
             })
             .collect()
     }
+
+    /// Returns a default value for MsmMask. Not secure.
+    /// Only to be used for debugging purposes.
+    pub fn zero() -> Self {
+        Self {
+            in_mask: G::zero(),
+            out_mask: G::zero(),
+        }
+    }
 }
 
 pub async fn d_msm<G: CurveGroup, Net: MpcSerNet>(

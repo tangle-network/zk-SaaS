@@ -1,8 +1,7 @@
 #![allow(non_snake_case, clippy::too_many_arguments)]
 
 use ark_ec::pairing::Pairing;
-use ark_ff::Zero;
-use dist_primitives::dmsm::d_msm;
+use dist_primitives::dmsm::{d_msm, MsmMask};
 use mpc_net::{MpcNet, MpcNetError, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
 
@@ -21,6 +20,7 @@ impl<'a, E: Pairing> A<'a, E> {
     /// Computes A
     pub async fn compute<Net: MpcNet>(
         self,
+        msm_mask: &MsmMask<E::G1>,
         net: &Net,
         sid: MultiplexedStreamID,
     ) -> Result<E::G1, MpcNetError> {
@@ -39,16 +39,9 @@ impl<'a, E: Pairing> A<'a, E> {
         let v1 = self.L + v0;
 
         // Calculate ∏{i∈[0,m]}(S_i)^a_i using dmsm
-        let prod = d_msm::<E::G1, _>(
-            self.S,
-            self.a,
-            E::G1::zero(),
-            E::G1::zero(),
-            self.pp,
-            net,
-            sid,
-        )
-        .await?;
+        let prod =
+            d_msm::<E::G1, _>(self.S, self.a, msm_mask, self.pp, net, sid)
+                .await?;
 
         let A = v1 + prod;
 
@@ -71,6 +64,7 @@ impl<'a, E: Pairing> B<'a, E> {
     /// Computes B
     pub async fn compute<Net: MpcNet>(
         self,
+        msm_mask: &MsmMask<E::G2>,
         net: &Net,
         sid: MultiplexedStreamID,
     ) -> Result<E::G2, MpcNetError> {
@@ -87,16 +81,9 @@ impl<'a, E: Pairing> B<'a, E> {
         // Calculate Z.(K)^s
         let v1 = self.Z + v0;
         // Calculate ∏{i∈[0,m]}(V_i)^a_i using dmsm
-        let prod = d_msm::<E::G2, _>(
-            self.V,
-            self.a,
-            E::G2::zero(),
-            E::G2::zero(),
-            self.pp,
-            net,
-            sid,
-        )
-        .await?;
+        let prod =
+            d_msm::<E::G2, _>(self.V, self.a, msm_mask, self.pp, net, sid)
+                .await?;
 
         let B = v1 + prod;
 
@@ -124,6 +111,7 @@ impl<'a, E: Pairing> C<'a, E> {
     /// Computes C
     pub async fn compute<Net: MpcNet>(
         self,
+        msm_mask: &[MsmMask<E::G1>; 3],
         net: &Net,
     ) -> Result<E::G1, MpcNetError> {
         // We use variables (A, M, ∏{i∈[l+1,m]}(W_i)^a_i, ∏{i∈[0,Q−2]}(U_i)h_i, ∏{i∈[0,m]}(H_i)^a_i)
@@ -140,8 +128,7 @@ impl<'a, E: Pairing> C<'a, E> {
         let w = d_msm::<E::G1, _>(
             self.W,
             self.ax,
-            E::G1::zero(),
-            E::G1::zero(),
+            &msm_mask[0],
             self.pp,
             net,
             CHANNEL0,
@@ -150,8 +137,7 @@ impl<'a, E: Pairing> C<'a, E> {
         let u = d_msm::<E::G1, _>(
             self.U,
             self.h,
-            E::G1::zero(),
-            E::G1::zero(),
+            &msm_mask[1],
             self.pp,
             net,
             CHANNEL1,
@@ -160,8 +146,7 @@ impl<'a, E: Pairing> C<'a, E> {
         let h = d_msm::<E::G1, _>(
             self.H,
             self.a,
-            E::G1::zero(),
-            E::G1::zero(),
+            &msm_mask[2],
             self.pp,
             net,
             CHANNEL2,

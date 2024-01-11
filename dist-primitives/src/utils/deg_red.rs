@@ -64,6 +64,16 @@ where
             })
             .collect()
     }
+
+    /// Returns a default value for DegRedMask. Not secure.
+    /// Only to be used for debugging purposes.
+    pub fn zero(num: usize) -> Self {
+        Self {
+            in_mask: vec![T::zero(); num],
+            out_mask: vec![T::zero(); num],
+            _marker: std::marker::PhantomData,
+        }
+    }
 }
 
 /// Reduces the degree of a poylnomial with the help of king

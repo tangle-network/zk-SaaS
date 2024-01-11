@@ -83,6 +83,15 @@ impl<F: FftField + PrimeField> FftMask<F> {
             })
             .collect()
     }
+
+    /// Returns a default value for FftMask. Not secure.
+    /// Only to be used for debugging purposes.
+    pub fn zero(mbyl: usize) -> Self {
+        Self {
+            in_mask: vec![F::zero(); mbyl],
+            out_mask: vec![F::zero(); mbyl],
+        }
+    }
 }
 
 /// Takes as input packed shares of evaluations a polynomial over dom and outputs shares of the FFT of the polynomial
