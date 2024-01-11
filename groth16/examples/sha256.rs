@@ -56,7 +56,7 @@ where
     let msm_section = start_timer!(|| "MSM operations");
     // Compute msm while dropping the base vectors as they are not used again
     let compute_a = start_timer!(|| "Compute A");
-    // TODO: Use appropriate values of L, N
+    // TODO: Use appropriate values of L, N taken from the unpacked CRS
     let pi_a_share = groth16::prove::A::<E> {
         L: Default::default(),
         N: Default::default(),
@@ -70,7 +70,7 @@ where
     .unwrap();
     end_timer!(compute_a);
 
-    // TODO: Use appropriate values of Z, K
+    // TODO: Use appropriate values of Z, K taken from the unpacked CRS
     let compute_b = start_timer!(|| "Compute B");
     let pi_b_share: E::G2 = groth16::prove::B::<E> {
         Z: Default::default(),
@@ -85,7 +85,7 @@ where
     .unwrap();
     end_timer!(compute_b);
 
-    // TODO: Use appropriate values for M
+    // TODO: Use appropriate values for M taken from the unpacked CRS
     let compute_c = start_timer!(|| "Compute C");
     let pi_c_share = groth16::prove::C::<E> {
         W: &crs_share.w,
