@@ -336,30 +336,6 @@ async fn main() {
                     g1_msm_mask[3][idx].clone(),
                 ];
 
-                ////////debugging with defaults
-                // let fft_mask = [
-                //     FftMask::default(qap_share.a.len()).clone(),
-                //     FftMask::default(qap_share.a.len()).clone(),
-                //     FftMask::default(qap_share.a.len()).clone(),
-                //     FftMask::default(qap_share.a.len()).clone(),
-                //     FftMask::default(qap_share.a.len()).clone(),
-                //     FftMask::default(qap_share.a.len()).clone(),
-                // ];
-
-                // let f_degred_mask = &DegRedMask::default(f_degred_mask.in_mask.len());
-
-                // fails
-                // let g1_msm_mask = [
-                //     MsmMask::default().clone(),
-                //     MsmMask::default().clone(),
-                //     MsmMask::default().clone(),
-                //     MsmMask::default().clone(),
-                // ];
-
-                // fails
-                // let g2_msm_mask = MsmMask::default().clone();
-                /////////////////////////////////
-
                 dsha256(
                     &pp,
                     crs_share,
