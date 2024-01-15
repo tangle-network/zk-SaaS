@@ -1,12 +1,19 @@
 # zk-SaaS
-zkSaaS implementation in Rust based on the paper [zkSaaS: Zero-Knowledge SNARKs as a Service](https://eprint.iacr.org/2023/905.pdf). Originally derived from https://github.com/guruvamsi-policharla/zksaas.
+Rust implementation of the zkSaaS protocol based on [zkSaaS: Zero-Knowledge SNARKs as a Service](https://eprint.iacr.org/2023/905.pdf). Originally derived from https://github.com/guruvamsi-policharla/zksaas.
 
-zkSaaS is a protocol (and more generally a service) that leverages secure multi-party computation to generate zkSNARKs. It does so by distributing the core computations used in the zero-knowledge prover of the target protocols. Currently, this repo supports the Groth16 prover. The protocol itself is a threshold protocol, meaning it tolerates up to $t$ corruptions. In this protocol $t$ is usually assigned to be $N/4$ where $N$ is the number of participating nodes in the computation.
+zkSaaS is a protocol (and more generally a service) that leverages secure multi-party computation to generate zkSNARKs. It does so by distributing the core computations used in the zero-knowledge prover of the target protocols. The protocol itself is a $(t,N)$-threshold protocol, meaning it tolerates up to $t$ corruptions out of $N$ nodes. In this protocol $t$ is usually assigned to be $N/4$ where $N$ is the number of participating nodes in the computation. Currently, this repo supports the Groth16 prover and we plan to support other protocols as we further benchmark this protocol.
 
-This work can very likely be extended to other proving systems, and we welcome such contributions or discussions.
+**WARNING:** This implementation has not been audited. The risk posed by vulnerabilities is a loss of privacy in the witness used for proof generation.
 
-## Current implementations
-The current implementations supported must be compatible with Arkworks and R1CS. The two currently supported compilers are Circom and Arkworks, which we can map similarly into Arkworks R1CS primitives.
+## Dependencies
+This project relies on the [arkworks](http://arkworks.rs) project for finite field and elliptic curve arithmetic. For communication we use an adapted mpc-net crate from [collaborative-zksnark](https://github.com/alex-ozdemir/collaborative-zksnark).
+
+## Overview
+* [`secret-sharing/`](secret-sharing): A packed secret sharing and reed solomon error correcting decoder library built on top of the finite field generics in arkworks.
+* [`dist-primitives/`](dist-primitives): Contains implementations of the distributed fast-fourier transform, multiscalar multiplication and partial products, complete with correctness tests.
+* [`groth16/`](groth16): Contains a distributed and local version of groth16 used for benchmarking timings.
+* [`scripts/`](scripts): Contains shell scripts to run various tests and benchmarks.
+* [`fixtures/`](fixtures): Circom circuit and proving key fixtures for local proving tests.
 
 ## Network Topology
 The network topology of the MPC computation is modelled as a star topology. There are two types of nodes in the MPC, denoted _king_ and _client_. The king is the center node and is expected to have the highest computational throughput. It is tasked with evaluating the $O(N)$ computations such as the FFTs. The clients are the nodes that connect to the king and are expected to have lower computational throughput. The workload of the prover is distributed across clients who run in time $O(N/(l\cdot\log{N}))$
@@ -34,3 +41,9 @@ An example of this network being set up, including the generation of all certifi
 can be found in `./scripts/prod_net_example.sh`. This example network sets up the nodes, then performs a
 protocol where each node sends its ID to the king, then, the king sums the IDs and returns the result to
 each client.
+
+## Integration
+An example integration occurring against a blockchain can be found in our [gadget](https://github.com/webb-tools/gadget). Here we hook up the mpc-net to an existing gossip network for a Substrate blockchain.
+
+## License
+This library is released under the MIT License.
