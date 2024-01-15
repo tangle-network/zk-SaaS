@@ -1,10 +1,17 @@
 # zk-SaaS
-Zero Knowledge SaaS implementation in rust
+zkSaaS implementation in Rust based on the paper [zkSaaS: Zero-Knowledge SNARKs as a Service](https://eprint.iacr.org/2023/905.pdf). Originally derived from https://github.com/guruvamsi-policharla/zksaas.
+
+zkSaaS is a protocol (and more generally a service) that leverages secure multi-party computation to generate zkSNARKs. It does so by distributing the core computations used in the zero-knowledge prover of the target protocols. Currently, this repo supports the Groth16 prover. The protocol itself is a threshold protocol, meaning it tolerates up to $t$ corruptions. In this protocol $t$ is usually assigned to be $N/4$ where $N$ is the number of participating nodes in the computation.
+
+This work can very likely be extended to other proving systems, and we welcome such contributions or discussions.
+
+## Current implementations
+The current implementations supported must be compatible with Arkworks and R1CS. The two currently supported compilers are Circom and Arkworks, which we can map similarly into Arkworks R1CS primitives.
 
 ## Network Topology
-Star topology. The "king" is the center node, and is expected to have the highest computational throughput. The "clients" are the nodes that connect to the king, and are expected to have lower computational throughput.
+The network topology of the MPC computation is modelled as a star topology. There are two types of nodes in the MPC, denoted _king_ and _client_. The king is the center node and is expected to have the highest computational throughput. It is tasked with evaluating the $O(N)$ computations such as the FFTs. The clients are the nodes that connect to the king and are expected to have lower computational throughput. The workload of the prover is distributed across clients who run in time $O(N/(l\cdot\log{N}))$
 
-## Running a testnet
+## Testing
 The testnet requires mutual TLS for ensuring security as well as enforcing the network topology. The network topology is a star
 graph, and as such, the center node (i.e., the "king") must be started first with a list of valid certificates that each individually represent
 the client nodes that will connect to the king.
