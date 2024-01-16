@@ -19,7 +19,7 @@ use groth16::{ext_wit, qap};
 use log::debug;
 use mpc_net::{LocalTestNet as Net, MpcNet, MultiplexedStreamID};
 
-use rand::{thread_rng, SeedableRng};
+use rand::SeedableRng;
 use secret_sharing::pss::PackedSharingParams;
 
 use groth16::proving_key::PackedProvingKeyShare;
@@ -27,6 +27,7 @@ use groth16::proving_key::PackedProvingKeyShare;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
+#[allow(clippy::too_many_arguments)]
 async fn dsha256<E, Net>(
     pp: &PackedSharingParams<E::ScalarField>,
     crs_share: &PackedProvingKeyShare<E>,
@@ -56,10 +57,10 @@ where
     let msm_section = start_timer!(|| "MSM operations");
     // Compute msm while dropping the base vectors as they are not used again
     let compute_a = start_timer!(|| "Compute A");
-    // TODO: Use appropriate values of L, N taken from the unpacked CRS
     let pi_a_share = groth16::prove::A::<E> {
-        L: Default::default(),
-        N: Default::default(),
+        L: crs_share.a_query0,
+        N: crs_share.delta_g1,
+        AG1: crs_share.alpha_g1,
         r: r_share,
         pp,
         S: &crs_share.s,
@@ -70,17 +71,32 @@ where
     .unwrap();
     end_timer!(compute_a);
 
-    // TODO: Use appropriate values of Z, K taken from the unpacked CRS
-    let compute_b = start_timer!(|| "Compute B");
-    let pi_b_share: E::G2 = groth16::prove::B::<E> {
-        Z: Default::default(),
-        K: Default::default(),
+    let compute_b = start_timer!(|| "Compute B in G1");
+    let pi_b_g1_share: E::G1 = groth16::prove::BInG1::<E> {
+        Z: crs_share.b_g1_query0,
+        K: crs_share.delta_g1,
+        BG1: crs_share.beta_g1,
+        r: r_share,
+        s: s_share,
+        pp,
+        H: &crs_share.h,
+        a: a_share,
+    }
+    .compute(&g1_msm_mask[1], net, MultiplexedStreamID::Zero)
+    .await
+    .unwrap();
+    end_timer!(compute_b);
+    let compute_b = start_timer!(|| "Compute B in G2");
+    let pi_b_g2_share: E::G2 = groth16::prove::BInG2::<E> {
+        Z: crs_share.b_g2_query0,
+        K: crs_share.delta_g2,
+        BG2: crs_share.beta_g2,
         s: s_share,
         pp,
         V: &crs_share.v,
         a: a_share,
     }
-    .compute(&g2_msm_mask, net, MultiplexedStreamID::Zero)
+    .compute(g2_msm_mask, net, MultiplexedStreamID::Zero)
     .await
     .unwrap();
     end_timer!(compute_b);
@@ -91,7 +107,8 @@ where
         W: &crs_share.w,
         U: &crs_share.u,
         A: pi_a_share,
-        M: Default::default(),
+        B: pi_b_g1_share,
+        M: crs_share.delta_g1,
         r: r_share,
         s: s_share,
         pp,
@@ -100,14 +117,7 @@ where
         ax: ax_share,
         h: &h_share,
     }
-    .compute(
-        &[
-            g1_msm_mask[1].clone(),
-            g1_msm_mask[2].clone(),
-            g1_msm_mask[3].clone(),
-        ],
-        net,
-    )
+    .compute(&[g1_msm_mask[2].clone(), g1_msm_mask[3].clone()], net)
     .await
     .unwrap();
     end_timer!(compute_c);
@@ -115,16 +125,16 @@ where
     end_timer!(msm_section);
 
     // Send pi_a_share, pi_b_share, pi_c_share to client
-    (pi_a_share, pi_b_share, pi_c_share)
+    (pi_a_share, pi_b_g2_share, pi_c_share)
 }
 
 fn pack_from_witness<E: Pairing>(
     pp: &PackedSharingParams<E::ScalarField>,
     full_assignment: Vec<E::ScalarField>,
 ) -> Vec<Vec<E::ScalarField>> {
-    let rng = &mut ark_std::test_rng();
     let packed_assignments = cfg_chunks!(full_assignment, pp.l)
         .map(|chunk| {
+            let rng = &mut ark_std::rand::thread_rng();
             let secrets = if chunk.len() < pp.l {
                 let mut secrets = chunk.to_vec();
                 secrets.resize(pp.l, E::ScalarField::zero());
@@ -206,7 +216,6 @@ async fn main() {
 
     // compute masks
     let domain = qap_shares[0].domain;
-    let rng = &mut thread_rng();
 
     let root_of_unity = {
         let domain_size_double = 2 * domain.size();
@@ -347,7 +356,7 @@ async fn main() {
                     &fft_mask,
                     f_degred_mask,
                     &g1_msm_mask,
-                    &g2_msm_mask,
+                    g2_msm_mask,
                     &net,
                 )
                 .await
@@ -364,14 +373,12 @@ async fn main() {
         c_shares.push(c_share);
     }
 
-    let mut a = pp.unpack2(a_shares)[0];
-    let mut b = pp.unpack2(b_shares)[0];
+    let a = pp.unpack2(a_shares)[0];
+    let b = pp.unpack2(b_shares)[0];
     let c = pp.unpack2(c_shares)[0];
 
     // These elements are needed to construct the full proof, they are part of the proving key.
     // however, we can just send these values to the client, not the full proving key.
-    a += pk.a_query[0] + vk.alpha_g1;
-    b += pk.b_g2_query[0] + vk.beta_g2;
     debug!("a:{}", a);
     debug!("b:{}", b);
     debug!("c:{}", c);
