@@ -4,6 +4,7 @@ use ark_crypto_primitives::snark::SNARK;
 use ark_ec::pairing::Pairing;
 use ark_ec::CurveGroup;
 use ark_ff::BigInt;
+use ark_ff::UniformRand;
 use ark_groth16::{Groth16, Proof};
 use ark_poly::EvaluationDomain;
 use ark_poly::Radix2EvaluationDomain;
@@ -101,7 +102,6 @@ where
     .unwrap();
     end_timer!(compute_b);
 
-    // TODO: Use appropriate values for M taken from the unpacked CRS
     let compute_c = start_timer!(|| "Compute C");
     let pi_c_share = groth16::prove::C::<E> {
         W: &crs_share.w,
@@ -186,9 +186,8 @@ async fn main() {
         qap::<Bn254Fr, Radix2EvaluationDomain<_>>(&matrices, &full_assignment)
             .unwrap();
 
-    // TODO: use random values for r and s and update shares accordingly
-    let r = Bn254Fr::zero();
-    let s = Bn254Fr::zero();
+    let r = Bn254Fr::rand(rng);
+    let s = Bn254Fr::rand(rng);
     let arkworks_proof = Groth16::<Bn254, CircomReduction>::create_proof_with_reduction_and_matrices(
         &pk,
         r,
@@ -201,8 +200,10 @@ async fn main() {
 
     // Change number of parties here l = n/4
     let pp = PackedSharingParams::new(2);
-    let r_shares = vec![Bn254Fr::zero(); pp.n];
-    let s_shares = vec![Bn254Fr::zero(); pp.n];
+    // TODO: Share the random values r and s
+    // currently we are just sending them as is.
+    let r_shares = vec![r; pp.n];
+    let s_shares = vec![s; pp.n];
     let qap_shares = qap.pss(&pp);
     let crs_shares =
         PackedProvingKeyShare::<Bn254>::pack_from_arkworks_proving_key(&pk, pp);
