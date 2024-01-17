@@ -39,7 +39,7 @@ impl<'a, E: Pairing> A<'a, E> {
         // Given packed shares of S_i and au_i terms, the servers can use πMSM (dmsm) to compute ∏{i∈[0,Q−1]}(S_i)^a_i.
         // Since the output of MSM are regular shares, they can then be combined with L, N and regular shares
         // of r to get regular shares of A.
-        // Note: for simplicity, we actually implement MSM such that the output shares are packed shares of the same 
+        // Note: for simplicity, we actually implement MSM such that the output shares are packed shares of the same
         // value repeated l times. Therefore they can be combined with L, N and packed shares of r to get packed shares of A.
 
         // Calculate (N)^r
