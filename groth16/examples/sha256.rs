@@ -200,10 +200,8 @@ async fn main() {
 
     // Change number of parties here l = n/4
     let pp = PackedSharingParams::new(2);
-    // TODO: Share the random values r and s
-    // currently we are just sending them as is.
-    let r_shares = vec![r; pp.n];
-    let s_shares = vec![s; pp.n];
+    let r_shares = pp.pack(vec![r; pp.n], rng);
+    let s_shares = pp.pack(vec![s; pp.n], rng);
     let qap_shares = qap.pss(&pp);
     let crs_shares =
         PackedProvingKeyShare::<Bn254>::pack_from_arkworks_proving_key(&pk, pp);

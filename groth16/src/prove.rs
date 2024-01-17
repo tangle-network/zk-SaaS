@@ -39,6 +39,8 @@ impl<'a, E: Pairing> A<'a, E> {
         // Given packed shares of S_i and au_i terms, the servers can use πMSM (dmsm) to compute ∏{i∈[0,Q−1]}(S_i)^a_i.
         // Since the output of MSM are regular shares, they can then be combined with L, N and regular shares
         // of r to get regular shares of A.
+        // Note: for simplicity, we actually implement MSM such that the output shares are packed shares of the same 
+        // value repeated l times. Therefore they can be combined with L, N and packed shares of r to get packed shares of A.
 
         // Calculate (N)^r
         let v0 = self.N * self.r;
@@ -201,8 +203,6 @@ impl<'a, E: Pairing> C<'a, E> {
 
         const CHANNEL0: MultiplexedStreamID = MultiplexedStreamID::Zero;
         const CHANNEL1: MultiplexedStreamID = MultiplexedStreamID::One;
-
-        // TODO: replace in_mask and out_mask
 
         // Calculate ∏{i∈[l+1,m]}(W_i)^a_i using dmsm
         // NOTE: this `l_aux_acc`
