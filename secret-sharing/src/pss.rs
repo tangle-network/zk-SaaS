@@ -75,7 +75,7 @@ impl<F: FftField> PackedSharingParams<F> {
         let mut result = secrets;
 
         // Resize the secrets with t zeros
-        result.append(&mut vec![T::zero(); self.t]);
+        result.resize(self.t, T::zero());
 
         // interpolating on secrets domain
         self.secret.ifft_in_place(&mut result);

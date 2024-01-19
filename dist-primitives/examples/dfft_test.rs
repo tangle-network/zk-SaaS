@@ -2,13 +2,14 @@ use ark_bls12_377::Fr;
 use ark_ff::{FftField, PrimeField};
 use ark_poly::{EvaluationDomain, Radix2EvaluationDomain};
 use dist_primitives::{
-    dfft::{d_fft, fft_in_place_rearrange},
+    dfft::{d_fft, fft_in_place_rearrange, FftMask},
     utils::pack::transpose,
 };
 use mpc_net::ser_net::MpcSerNet;
 use mpc_net::{LocalTestNet as Net, MpcNet, MultiplexedStreamID};
 use secret_sharing::pss::PackedSharingParams;
 
+// TODO: this test is subsumed by those in dfft/tests.rs. Remove it.
 pub async fn d_fft_test<F: FftField + PrimeField, Net: MpcNet>(
     pp: &PackedSharingParams<F>,
     dom: &Radix2EvaluationDomain<F>,
@@ -39,11 +40,22 @@ pub async fn d_fft_test<F: FftField + PrimeField, Net: MpcNet>(
         .map(|x| x[net.party_id() as usize])
         .collect::<Vec<_>>();
 
+    // using a dummy mask as this example will eventually be removed
+    let fft_mask =
+        FftMask::<F>::new(vec![F::zero(); mbyl], vec![F::zero(); mbyl]);
+
     // Rearranging x
-    let peval_share =
-        d_fft(pcoeff_share, false, dom, pp, net, MultiplexedStreamID::One)
-            .await
-            .unwrap();
+    let peval_share = d_fft(
+        pcoeff_share,
+        &fft_mask,
+        false,
+        dom,
+        pp,
+        net,
+        MultiplexedStreamID::One,
+    )
+    .await
+    .unwrap();
 
     // Send to king who reconstructs and checks the answer
     let result = net

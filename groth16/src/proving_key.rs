@@ -16,11 +16,24 @@ use rayon::prelude::*;
     Clone, Debug, Default, PartialEq, CanonicalSerialize, CanonicalDeserialize,
 )]
 pub struct PackedProvingKeyShare<E: Pairing> {
+    /// s = `a_query[1..]`
     pub s: Vec<E::G1Affine>,
+    /// u = `h_query`
     pub u: Vec<E::G1Affine>,
-    pub v: Vec<E::G2Affine>,
+    /// w = `l_query`
     pub w: Vec<E::G1Affine>,
+    /// h = `b_g1_query[1..]`
     pub h: Vec<E::G1Affine>,
+    /// v = `b_g2_query[1..]`
+    pub v: Vec<E::G2Affine>,
+    pub a_query0: E::G1Affine,
+    pub b_g1_query0: E::G1Affine,
+    pub b_g2_query0: E::G2Affine,
+    pub delta_g1: E::G1Affine,
+    pub delta_g2: E::G2Affine,
+    pub alpha_g1: E::G1Affine,
+    pub beta_g1: E::G1Affine,
+    pub beta_g2: E::G2Affine,
 }
 
 impl<E: Pairing> PackedProvingKeyShare<E>
@@ -56,21 +69,20 @@ where
             .map(Into::into)
             .collect::<Vec<_>>();
 
-        let rng = &mut ark_std::test_rng();
         let packed_s = cfg_chunks!(pre_packed_s, pp.l)
-            .map(|chunk| pp.pack::<E::G1>(chunk.to_vec(), rng))
+            .map(|chunk| pp.det_pack::<E::G1>(chunk.to_vec()))
             .collect::<Vec<_>>();
         let packed_u = cfg_chunks!(pre_packed_u, pp.l)
-            .map(|chunk| pp.pack::<E::G1>(chunk.to_vec(), rng))
+            .map(|chunk| pp.det_pack::<E::G1>(chunk.to_vec()))
             .collect::<Vec<_>>();
         let packed_w = cfg_chunks!(pre_packed_w, pp.l)
-            .map(|chunk| pp.pack::<E::G1>(chunk.to_vec(), rng))
+            .map(|chunk| pp.det_pack::<E::G1>(chunk.to_vec()))
             .collect::<Vec<_>>();
         let packed_h = cfg_chunks!(pre_packed_h, pp.l)
-            .map(|chunk| pp.pack::<E::G1>(chunk.to_vec(), rng))
+            .map(|chunk| pp.det_pack::<E::G1>(chunk.to_vec()))
             .collect::<Vec<_>>();
         let packed_v = cfg_chunks!(pre_packed_v, pp.l)
-            .map(|chunk| pp.pack::<E::G2>(chunk.to_vec(), rng))
+            .map(|chunk| pp.det_pack::<E::G2>(chunk.to_vec()))
             .collect::<Vec<_>>();
 
         cfg_into_iter!(0..pp.n)
@@ -97,6 +109,14 @@ where
                     v: v_shares,
                     w: w_shares,
                     h: h_shares,
+                    a_query0: pk.a_query[0],
+                    b_g1_query0: pk.b_g1_query[0],
+                    b_g2_query0: pk.b_g2_query[0],
+                    delta_g1: pk.delta_g1,
+                    delta_g2: pk.vk.delta_g2,
+                    alpha_g1: pk.vk.alpha_g1,
+                    beta_g1: pk.beta_g1,
+                    beta_g2: pk.vk.beta_g2,
                 }
             })
             .collect()
@@ -144,6 +164,14 @@ where
             v: v_shares,
             w: w_shares,
             h: h_shares,
+            a_query0: E::G1Affine::rand(rng),
+            b_g1_query0: E::G1Affine::rand(rng),
+            b_g2_query0: E::G2Affine::rand(rng),
+            delta_g1: E::G1Affine::rand(rng),
+            delta_g2: E::G2Affine::rand(rng),
+            alpha_g1: E::G1Affine::rand(rng),
+            beta_g1: E::G1Affine::rand(rng),
+            beta_g2: E::G2Affine::rand(rng),
         }
     }
 }
